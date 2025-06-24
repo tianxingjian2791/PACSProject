@@ -31,6 +31,7 @@
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/data_out.h>
 
+#include <hdf5.h> // 添加HDF5支持
 #include <fstream>
 #include <iostream>
 #include <cmath>
@@ -210,13 +211,37 @@ namespace AMGTest
     void set_epsilon(double epsilon);
     void set_refinement(unsigned int refinement);
     void run();
+    void generate_dataset();
+
+    // 辅助函数：生成线性间隔数组
+    static std::vector<double> linspace(double start, double end, size_t num_points) 
+    {
+      std::vector<double> result;
+      if (num_points == 0) return result;
+      if (num_points == 1) {
+          result.push_back(start);
+          return result;
+      }
+      
+      double step = (end - start) / (num_points - 1);
+      for (size_t i = 0; i < num_points; i++) {
+          result.push_back(start + i * step);
+      }
+      return result;
+  }
 
   private:
     void make_grid();
     void setup_system();
     void assemble_system();
-    void solve();
-    void output_results() const;
+    double solve();
+    // void output_results() const;
+    void save_sample_to_hdf5(const std::string& filename, double theta, double rho, unsigned int sample_index);
+    void save_scalar(hid_t group_id, const std::string& name, double value);
+    void save_sparse_matrix(hid_t group_id, const std::string& name, const PETScWrappers::MPI::SparseMatrix& matrix);
+    template <typename T>
+    void save_vector(hid_t group_id, const std::string& name, const std::vector<T>& data);
+
 
     // 模式参数
     DiffusionPattern pattern;
@@ -234,6 +259,7 @@ namespace AMGTest
     dealii::AffineConstraints<double> constraints;
     dealii::PETScWrappers::MPI::SparseMatrix system_matrix;
     dealii::PETScWrappers::MPI::Vector solution;
+    dealii::PETScWrappers::MPI::Vector init_solution;
     dealii::PETScWrappers::MPI::Vector system_rhs;
 
     // 精确解和右端项
@@ -308,6 +334,7 @@ namespace AMGTest
     // 初始化矩阵和向量
     system_matrix.reinit(locally_owned_dofs, locally_owned_dofs, dsp, MPI_COMM_WORLD);
     solution.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+    init_solution = solution;
     system_rhs.reinit(locally_owned_dofs, MPI_COMM_WORLD);
 
     // 设置约束（边界条件）
@@ -383,8 +410,9 @@ namespace AMGTest
   }
 
   template <int dim>
-  void Solver<dim>::solve()
+  double Solver<dim>::solve()
   {
+    solution = init_solution;
     // 设置求解器参数
     dealii::PETScWrappers::SolverCG solver(solver_control, MPI_COMM_WORLD);
     dealii::PETScWrappers::PreconditionBoomerAMG preconditioner;
@@ -397,37 +425,237 @@ namespace AMGTest
     // 初始化AMG预条件子
     preconditioner.initialize(system_matrix, data);
 
+    PETScWrappers::MPI::Vector residual(system_rhs);
+    PETScWrappers::MPI::Vector minus_solution(solution);
+
+    minus_solution *= -1; 
+    system_matrix.vmult_add(residual, minus_solution);
+    double init_r_norm = residual.l2_norm();
+    // std::cout<<init_r_norm<<" ";
+
     // 求解系统
     solver.solve(system_matrix, solution, system_rhs, preconditioner);
 
+    residual = system_rhs;
+    minus_solution = solution;
+    minus_solution *= -1;
+    system_matrix.vmult_add(residual, minus_solution);
+    double final_r_norm = residual.l2_norm();  
+    // std::cout<<final_r_norm<<std::endl; 
+
+
     // 打印迭代信息
-    std::cout << "   Solver converged in " << solver_control.last_step()
-              << " iterations." << std::endl;
+    // std::cout << "   Solver converged in " << solver_control.last_step()
+    //           << " iterations." << std::endl;
+
+    const unsigned int k = solver_control.last_step();
+    if (k < 1) {
+      std::cerr << "Warning: Insufficient residuals recorded (" 
+                << k << "). Returning rho=0." << std::endl;
+      return 0.0;
+  }
+
+    // ρ = (||r_k|| / ||r_0||)^{1/k}
+    const double rho = (k > 0) ? std::pow(final_r_norm / init_r_norm, 1.0 / k) : 0.0;
 
     // 应用约束
     constraints.distribute(solution);
+
+    return rho;
+  }
+
+  // template <int dim>
+  // void Solver<dim>::output_results() const
+  // {
+  //   // 输出结果（可选）
+  //   DataOut<dim> data_out;
+  //   data_out.attach_dof_handler(dof_handler);
+  //   data_out.add_data_vector(solution, "solution");
+  //   data_out.build_patches();
+
+  //   std::string pattern_name;
+  //   switch (pattern)
+  //   {
+  //   case DiffusionPattern::vertical_stripes:   pattern_name = "vertical_stripes";   break;
+  //   case DiffusionPattern::vertical_stripes2: pattern_name = "vertical_stripes2"; break;
+  //   case DiffusionPattern::checkerboard2:       pattern_name = "checkerboard2";       break;
+  //   case DiffusionPattern::checkerboard:     pattern_name = "checkerboard";     break;
+  //   }
+
+  //   std::ofstream output("solution-" + pattern_name + ".vtk");
+  //   data_out.write_vtk(output);
+  // }
+
+  template <int dim>
+  void Solver<dim>::save_sample_to_hdf5(
+      const std::string& filename, 
+      double theta, 
+      double rho, 
+      unsigned int sample_index) 
+  {
+    // 创建或打开HDF5文件
+    hid_t file_id = H5Fcreate(filename.c_str(), H5F_ACC_RDWR | H5F_ACC_CREAT, 
+                             H5P_DEFAULT, H5P_DEFAULT);
+    
+    // 创建样本组: /sample_0000, /sample_0001, ...
+    char group_name[50];
+    snprintf(group_name, sizeof(group_name), "/sample_%08u", sample_index);
+    hid_t group_id = H5Gcreate(file_id, group_name, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    
+    // 保存标量参数: theta, rho, h
+    double h = triangulation.begin_active()->diameter(); // 网格尺寸
+    save_scalar(group_id, "theta", theta);
+    save_scalar(group_id, "rho", rho);
+    save_scalar(group_id, "h", h);
+    
+    // 保存稀疏矩阵A_h (CSR格式)
+    save_sparse_matrix(group_id, "A_h", system_matrix);
+    
+    // 保存扩散系数模式信息
+    save_scalar(group_id, "pattern", static_cast<int>(pattern));
+    save_scalar(group_id, "epsilon", epsilon);
+    
+    // 关闭资源
+    H5Gclose(group_id);
+    H5Fclose(file_id);
   }
 
   template <int dim>
-  void Solver<dim>::output_results() const
+  void Solver<dim>::save_scalar(hid_t group_id, const std::string& name, double value) {
+    hid_t dataspace_id = H5Screate(H5S_SCALAR);
+    hid_t dataset_id = H5Dcreate(group_id, name.c_str(), H5T_NATIVE_DOUBLE, 
+                                dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value);
+    H5Dclose(dataset_id);
+    H5Sclose(dataspace_id);
+  }
+
+  template <int dim>
+  void Solver<dim>::save_sparse_matrix(
+      hid_t group_id, 
+      const std::string& name, 
+      const PETScWrappers::MPI::SparseMatrix& matrix) 
   {
-    // 输出结果（可选）
-    DataOut<dim> data_out;
-    data_out.attach_dof_handler(dof_handler);
-    data_out.add_data_vector(solution, "solution");
-    data_out.build_patches();
-
-    std::string pattern_name;
-    switch (pattern)
-    {
-    case DiffusionPattern::vertical_stripes:   pattern_name = "vertical_stripes";   break;
-    case DiffusionPattern::vertical_stripes2: pattern_name = "vertical_stripes2"; break;
-    case DiffusionPattern::checkerboard2:       pattern_name = "checkerboard2";       break;
-    case DiffusionPattern::checkerboard:     pattern_name = "checkerboard";     break;
+    // 获取矩阵信息
+    const PetscInt m = matrix.m();
+    const PetscInt n = matrix.n();
+    const PetscInt nnz = matrix.n_nonzero_elements();
+    
+    // 提取CSR格式数据
+    std::vector<PetscInt> row_ptr(m + 1);
+    std::vector<PetscInt> col_ind(nnz);
+    std::vector<PetscScalar> values(nnz);
+    
+    PetscInt start, end;
+    MatGetOwnershipRange(matrix, &start, &end);
+    
+    PetscInt idx = 0;
+    for (PetscInt i = start; i < end; i++) {
+      PetscInt ncols;
+      const PetscInt* cols;
+      const PetscScalar* vals;
+      MatGetRow(matrix, i, &ncols, &cols, &vals);
+      
+      row_ptr[i - start] = idx;
+      for (PetscInt j = 0; j < ncols; j++) {
+        col_ind[idx] = cols[j];
+        values[idx] = vals[j];
+        idx++;
+      }
+      MatRestoreRow(matrix, i, &ncols, &cols, &vals);
     }
+    row_ptr[m] = idx;  // 最后一行结束位置
+    
+    // 保存矩阵元数据
+    save_scalar(group_id, name + "/m", static_cast<double>(m));
+    save_scalar(group_id, name + "/n", static_cast<double>(n));
+    save_scalar(group_id, name + "/nnz", static_cast<double>(nnz));
+    
+    // 保存CSR数组
+    save_vector(group_id, name + "/row_ptr", row_ptr);
+    save_vector(group_id, name + "/col_ind", col_ind);
+    save_vector(group_id, name + "/values", values);
+  }
 
-    std::ofstream output("solution-" + pattern_name + ".vtk");
-    data_out.write_vtk(output);
+  template <int dim>
+  template <typename T>
+  void Solver<dim>::save_vector(
+      hid_t group_id, 
+      const std::string& name, 
+      const std::vector<T>& data) 
+  {
+    hsize_t dims[1] = {data.size()};
+    hid_t dataspace_id = H5Screate_simple(1, dims, NULL);
+    hid_t dataset_id = H5Dcreate(group_id, name.c_str(), 
+                                (typeid(T) == typeid(int)) ? H5T_NATIVE_INT : H5T_NATIVE_DOUBLE,
+                                dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    
+    if (typeid(T) == typeid(int)) {
+      H5Dwrite(dataset_id, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
+    } else {
+      H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
+    }
+    
+    H5Dclose(dataset_id);
+    H5Sclose(dataspace_id);
+  }
+
+  template <int dim>
+  void Solver<dim>::generate_dataset() {
+    // 创建HDF5文件
+    const std::string filename = "amg_dataset.h5";
+    
+    // 参数范围 (9600个样本 = 4模式 × 12ε × 25θ × 8网格)
+    const std::array<DiffusionPattern, 4> patterns = {
+      DiffusionPattern::vertical_stripes,
+      DiffusionPattern::vertical_stripes2,
+      DiffusionPattern::checkerboard2,
+      DiffusionPattern::checkerboard
+    };
+    
+    const std::vector<double> epsilon_values = 
+      linspace(0.0, 9.5, 12); // [0.0, 0.86, ..., 9.5]
+    
+    const std::vector<double> theta_values = 
+      linspace(0.02, 0.9, 25); // [0.02, 0.057, ..., 0.9]
+    
+    const std::vector<unsigned int> refinements = 
+      {3, 4, 5, 6, 7, 8, 9, 10}; // 对应不同网格尺寸
+    
+    unsigned int sample_index = 0;
+    
+    // 遍历所有参数组合
+    for (auto pattern : patterns) {
+      set_pattern(pattern);
+      
+      for (double epsilon : epsilon_values) {
+        set_epsilon(epsilon);
+        
+        for (unsigned int refinement : refinements) {
+          set_refinement(refinement);
+          
+          // 重新生成网格和系统
+          triangulation.clear();
+          make_grid();
+          setup_system();
+          assemble_system();
+          
+          for (double theta : theta_values) {
+            // 计算收敛因子
+            double rho = solve();
+            
+            // 保存样本
+            save_sample_to_hdf5(filename, theta, rho, sample_index);
+            sample_index++;
+            
+            if (sample_index % 100 == 0) {
+              std::cout << "Generated " << sample_index << "/9600 samples" << std::endl;
+            }
+          }
+        }
+      }
+    }
+    std::cout << "Dataset generation complete. Total samples: " << sample_index << std::endl;
   }
 
   template <int dim>
@@ -435,9 +663,29 @@ namespace AMGTest
   {
     make_grid();
     setup_system();
-    assemble_system();
-    solve();
-    output_results(); // 可选
+    // assemble_system();
+    // solve();
+    // output_results(); // 可选
+
+    // 生成9600个样本数据
+    std::vector<std::tuple<double, double, double>> samples;  // (theta, h, rho)
+    const std::vector<double> theta_values = linspace(0.25, 0.5, 2);
+    const std::vector<double> epsilon_values = linspace(0.0, 9.5, 2);
+    
+    for (double theta : theta_values) {
+        for (double epsilon : epsilon_values) {
+            set_epsilon(epsilon);  // 更新扩散系数
+            set_theta(theta);
+            assemble_system();     // 重新组装系统
+            
+            const double rho = solve();
+            const double h = triangulation.begin_active()->diameter();
+            samples.emplace_back(theta, h, rho);
+        }
+    }
+    std::cout<<"The first sample:"<<std::endl;
+    std::cout<<"theta: "<<std::get<0>(samples[0])<<", h: "<<std::get<1>(samples[0])<<", rho: "<<std::get<2>(samples[0])<<std::endl;
+    // 保存samples到文件...
   }
 } // namespace AMGTest
 
@@ -456,10 +704,10 @@ int main(int argc, char* argv[])
     const double epsilon = 2.0; // ε参数 (10^ε)
     const unsigned int refinement = 5; // 全局细化次数（网格大小=2^refinement）
 
-    // 运行求解器
+    // Generate Dataset
     Solver<2> solver(pattern, epsilon, refinement);
     solver.set_theta(0.25);
-    solver.run();
+    solver.generate_dataset();
   }
   catch (std::exception &exc)
   {
