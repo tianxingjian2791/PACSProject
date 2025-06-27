@@ -34,7 +34,7 @@ int main(int argc, char* argv[])
     solver4.run();
     */
 
-    std::ofstream file("output3.csv");
+    std::ofstream file("output.csv");
     
     // 参数范围 (9600个样本 = 4模式 × 12ε × 25θ × 8网格)
     const std::array<DiffusionPattern, 4> patterns = {{
@@ -51,9 +51,9 @@ int main(int argc, char* argv[])
         Solver<2>::linspace(0.02, 0.9, 25); // [0.02, 0.057, ..., 0.9]
     
     const std::vector<unsigned int> refinements = 
-    {8};
+    // {8};
     // {7};
-    // {3, 4, 5, 6}; // 对应不同网格尺寸
+    {3, 4, 5, 6}; // 对应不同网格尺寸
     
     unsigned int sample_index = 0;
     
@@ -84,6 +84,7 @@ int main(int argc, char* argv[])
             
             for (double theta : theta_values) {
             Solver<2> solver(pattern, epsilon, refinement);
+            // std::cout<<"theta to be set: "<<theta<<std::endl;
             solver.set_theta(theta);
             solver.run(file);
             sample_index++;
