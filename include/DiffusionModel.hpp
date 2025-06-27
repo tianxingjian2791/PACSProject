@@ -299,19 +299,20 @@ namespace AMGTest
   template <int dim>
   void Solver<dim>::set_pattern(DiffusionPattern pattern)
   {
-    pattern = pattern;
+    this->pattern = pattern;
   }
 
   template <int dim>
   void Solver<dim>::set_theta(double theta)
   {
-    theta = theta;
+    this->theta = theta;
+    // std::cout<<this->theta<<std::endl;
   }
 
   template <int dim>
   void Solver<dim>::set_epsilon(double epsilon)
   {
-    epsilon = epsilon;
+    this->epsilon = epsilon;
   }
 
   template <int dim>
@@ -426,6 +427,7 @@ namespace AMGTest
     // 配置BoomerAMG参数
     dealii::PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
     data.strong_threshold = theta; // 设置强阈值参数θ（可根据需要调整）
+    // std::cout<<"strong threshold: "<<data.strong_threshold<<std::endl;
     data.symmetric_operator = true; // 对称算子
 
     // 初始化AMG预条件子
@@ -671,10 +673,15 @@ namespace AMGTest
       MatGetRow(matrix, i, &ncols, &cols, &vals);
       
       row_ptr.push_back(idx);
+      double zero_tol = 1e-12;
       for (PetscInt j = 0; j < ncols; j++) {
-        col_ind.push_back(cols[j]);
-        values.push_back(vals[j]);
-        idx++;
+        // Filter the zeros explicitly
+        if (std::abs(vals[j]) > zero_tol){
+          col_ind.push_back(cols[j]);
+          values.push_back(vals[j]);
+          idx++;
+        }
+        
       }
       MatRestoreRow(matrix, i, &ncols, &cols, &vals);
     }
@@ -792,7 +799,9 @@ namespace AMGTest
             // set_theta(theta);
     assemble_system();     // 重新组装系统
     
+    
     const double rho = solve(file);
+    // std::cout<<theta<<std::endl;
     const double h = triangulation.begin_active()->diameter();
     samples.emplace_back(theta, h, rho);
         // }
