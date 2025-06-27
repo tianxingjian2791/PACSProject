@@ -8,10 +8,13 @@ project(${TARGET} LANGUAGES C CXX)
 file(GLOB_RECURSE TARGET_SRC "src/*.cpp")
 set(TARGET_SRC ${TARGET_SRC})
 
+# include
+include_directories(include)
+
 # Deal.II configuration
 find_package(deal.II 9.5.0
   COMPONENTS PETSc
-  HINTS ${deal.II_DIR} ${DEAL_II_DIR} ../dealii-install ../../ $ENV{DEAL_II_DIR}
+  HINTS ${deal.II_DIR} ${DEAL_II_DIR} ../dealii-install $ENV{DEAL_II_DIR}
 )
 if(NOT deal.II_FOUND)
   message(FATAL_ERROR "\n"
