@@ -45,15 +45,18 @@ int main(int argc, char* argv[])
     }};
     
     const std::vector<double> epsilon_values = 
-        Solver<2>::linspace(0.0, 9.5, 12); // [0.0, 0.86, ..., 9.5]
+        Solver<2>::linspace(0.0, 9.5, 40); // dataset2
+        // Solver<2>::linspace(0.0, 9.5, 12); // dataset1
     
     const std::vector<double> theta_values = 
-        Solver<2>::linspace(0.02, 0.9, 25); // [0.02, 0.057, ..., 0.9]
+        Solver<2>::linspace(0.02, 0.9, 45); // dataset2
+        // Solver<2>::linspace(0.02, 0.9, 25); // dataset1
     
     const std::vector<unsigned int> refinements = 
-    // {8};
-    // {7};
-    {3, 4, 5, 6}; // 对应不同网格尺寸
+        {3, 4, 5, 6}; // dataset2
+        // {8};
+        // {7};
+        // {3, 4, 5, 6}; // dataset1 对应不同网格尺寸
     
     unsigned int sample_index = 0;
     
@@ -91,7 +94,7 @@ int main(int argc, char* argv[])
             
             // if (sample_index % 100 == 0) {
             // if (sample_index) {
-            std::cout << "Generated " << sample_index << "/9600 samples" << std::endl;
+            std::cout << "Generated " << sample_index << "/28800 samples" << std::endl;
             // }
             }
         }
