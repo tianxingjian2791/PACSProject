@@ -53,8 +53,8 @@ class GATModel(nn.Module):
             rho预测值
         """
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
-        theta = data.theta
-        log_h = data.log_h
+        theta = torch.reshape(data.theta, (-1,1))
+        log_h = torch.reshape(data.log_h, (-1,1))
         
         # GAT层
         x = F.elu(self.conv1(x, edge_index, edge_attr=edge_attr))
@@ -73,7 +73,7 @@ class GATModel(nn.Module):
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.fc2(x)
         
-        return x
+        return x.squeeze(-1)
 
 def train(model, loader, optimizer, device):
     """
