@@ -20,7 +20,7 @@ class SparseMatrixDataset(InMemoryDataset):
         """
         self.csv_file = csv_file
         super().__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        self.data, self.slices = torch.load(self.processed_paths[0], weights_only=False)
 
     @property
     def raw_file_names(self):
@@ -94,7 +94,7 @@ class SparseMatrixDataset(InMemoryDataset):
                 y = torch.tensor([rho], dtype=torch.float)
                 theta = torch.tensor([theta_v], dtype=torch.float)
                 h = torch.tensor([h_v], dtype=torch.float)
-                log_h = -torch.log10(h)
+                log_h = -torch.log2(h)
 
                 data = Data(
                     x=x,
@@ -133,14 +133,14 @@ def create_data_loaders(data_dir, batch_size=32):
         csv_file='train.csv'
     )
     
-    # test_dataset = SparseMatrixDataset(
-    #     root=os.path.join(data_dir, 'test'),
-    #     csv_file='test.csv'
-    # )
+    test_dataset = SparseMatrixDataset(
+        root=os.path.join(data_dir, 'test'),
+        csv_file='test.csv'
+    )
     
     # 创建数据加载器
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    # test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     
-    # return train_loader, test_loader
-    return train_loader
+    return train_loader, test_loader
+    # return train_loader
