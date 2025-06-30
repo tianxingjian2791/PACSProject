@@ -18,7 +18,7 @@ print(f"使用设备: {device}")
 #     raw/test.csv
 
 # 创建数据加载器
-data_dir = 'data'
+data_dir = 'datasets'
 batch_size = 16
 # train_loader, test_loader = create_data_loaders(data_dir, batch_size)
 train_loader = create_data_loaders(data_dir, batch_size)
