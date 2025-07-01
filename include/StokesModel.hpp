@@ -176,7 +176,7 @@ namespace StokesAMG
     // 初始化MPI变量 (串行情况下使用单个进程)
     std::vector<IndexSet> locally_owned_dofs;
     std::vector<IndexSet> locally_relevant_dofs;
-    DoFTools::count_dofs_per_block(dof_handler, locally_owned_dofs, locally_relevant_dofs);
+    MGTools::count_dofs_per_block(dof_handler, locally_owned_dofs, locally_relevant_dofs);
 
     // 设置约束 (边界条件)
     constraints.clear();
@@ -411,7 +411,7 @@ namespace StokesAMG
   void generate_stokes_dataset()
   {
     // 打开输出文件
-    std::ofstream file("stokes_dataset.csv");
+    std::ofstream file("./datasets/train/raw/stokes_dataset.csv");
     
     // 参数范围 (3600个样本 = 3ν × 4U × 6h × 25θ)
     const std::vector<double> viscosities = {0.001, 0.1, 10.0};
@@ -426,7 +426,7 @@ namespace StokesAMG
                                       theta_values.size();
     
     // CSV文件头
-    file << "viscosity,inflow_velocity,mesh_size,theta,rho,matrix_rows,matrix_cols,nnz";
+    // file << "viscosity,inflow_velocity,mesh_size,theta,rho,matrix_rows,matrix_cols,nnz";
     
     // 遍历所有参数组合
     for (double nu : viscosities) {
