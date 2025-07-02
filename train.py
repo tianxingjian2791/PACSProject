@@ -1,6 +1,6 @@
 import torch
-from data_processing import create_data_loaders
-from gat_model import GATModel, train, test
+from data.data_processing import create_data_loaders
+from model.gat_model import GATModel, train, test
 import os
 
 # 设置随机种子以确保可重复性
@@ -20,8 +20,8 @@ print(f"使用设备: {device}")
 # 创建数据加载器
 data_dir = 'datasets'
 batch_size = 16
-# train_loader, test_loader = create_data_loaders(data_dir, batch_size)
-train_loader = create_data_loaders(data_dir, batch_size)
+train_loader, test_loader = create_data_loaders(data_dir, batch_size)
+# train_loader = create_data_loaders(data_dir, batch_size)
 # 初始化模型
 in_channels = 1  # 节点特征维度 (度)
 hidden_channels = 64
@@ -46,13 +46,14 @@ num_epochs = 50
 
 # 训练循环
 for epoch in range(1, num_epochs + 1):
+    print(f"======training model: {epoch}/{num_epochs}======")
     train_loss = train(model, train_loader, optimizer, device)
-    # test_loss = test(model, test_loader, device)
-    # scheduler.step(test_loss)
+    test_loss = test(model, test_loader, device)
+    scheduler.step(test_loss)
     
     print(f'Epoch: {epoch:02d}, '
           f'Train Loss: {train_loss:.6f}, '
-        #   f'Test Loss: {test_loss:.6f}, '
+          f'Test Loss: {test_loss:.6f}, '
           f'LR: {optimizer.param_groups[0]["lr"]:.6f}')
 
 # 保存模型
