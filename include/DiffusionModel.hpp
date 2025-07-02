@@ -40,7 +40,7 @@
 #include <cmath>
 
 
-namespace AMGTest
+namespace AMGDiffusion
 {
   using namespace dealii;
 
