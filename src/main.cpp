@@ -20,7 +20,7 @@ int main(int argc, char* argv[])
         {
             using namespace AMGDiffusion;
 
-            std::ofstream file("./datasets/test/raw/test.csv");
+            std::ofstream file("./datasets/train/raw/train_.csv");
             
             // 参数范围 (9600个样本 = 4模式 × 12ε × 25θ × 8网格)
             const std::array<DiffusionPattern, 4> patterns = {{
@@ -41,8 +41,8 @@ int main(int argc, char* argv[])
             const std::vector<unsigned int> refinements = 
                 // {3, 4, 5, 6}; // dataset2
                 // {8};
-                {7}; // dataset1: test
-                // {3, 4, 5, 6}; // dataset1: train
+                // {7}; // dataset1: test
+                {3, 4, 5, 6}; // dataset1: train
             
             unsigned int sample_index = 0;
             
