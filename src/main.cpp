@@ -1,39 +1,15 @@
 #include "DiffusionModel.hpp"
 #include "StokesModel.hpp"
+#include "ElasticModel.hpp"
 
 int main(int argc, char* argv[])
 {
     try
     {
         using namespace dealii;
-        using namespace AMGTest;
 
         // 初始化 MPI（在串行模式下也可以安全调用）
         Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
-
-        // 参数设置
-        /*
-        const DiffusionPattern pattern = DiffusionPattern::vertical_stripes; // 选择模式
-        const double epsilon = 2.0; // ε参数 (10^ε)
-        const unsigned int refinement = 5; // 全局细化次数（网格大小=2^refinement）
-        */
-
-        // Generate Dataset
-        // Solver<2> solver(pattern, epsilon, refinement);
-        // solver.set_theta(0.25);
-        // solver.generate_dataset();
-        // solver.run();
-
-        /*
-        Solver<2> solver2(DiffusionPattern::checkerboard, epsilon, refinement);
-        solver2.run();
-
-        Solver<2> solver3(DiffusionPattern::vertical_stripes2, epsilon, refinement);
-        solver3.run();
-
-        Solver<2> solver4(DiffusionPattern::checkerboard2, epsilon, refinement);
-        solver4.run();
-        */
         
         if (argc < 2){
             std::cerr << "Usage: " << argv[0] << " [D|S]\n";
@@ -42,6 +18,7 @@ int main(int argc, char* argv[])
 
         if (std::strcmp(argv[1], "D") == 0)
         {
+            using namespace AMGDiffusion;
 
             std::ofstream file("./datasets/test/raw/test.csv");
             
@@ -112,10 +89,21 @@ int main(int argc, char* argv[])
             std::cout << "Dataset generation complete. Total samples: " << sample_index << std::endl;
 
         }
+        else if (std::strcmp(argv[1], "E") == 0)
+        {
+            using namespace AMGElastic;
+            std::cout << "Generating the dataset of Elastic equations" << std::endl;
+            // generate_stokes_dataset();
+            ElasticProblem<2> elastic_problem;
+            elastic_problem.run();
+        }
         else if (std::strcmp(argv[1], "S") == 0)
         {
+            using namespace AMGStokes;
             std::cout << "Generating the dataset of Stokes equations" << std::endl;
-            // StokesAMG::generate_stokes_dataset();
+            // generate_stokes_dataset();      
+            StokesProblem<2> stokes_problem(2);
+            stokes_problem.run();
         }
         else
         {
