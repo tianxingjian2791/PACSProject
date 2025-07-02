@@ -434,20 +434,19 @@ namespace AMGDiffusion
     preconditioner.initialize(system_matrix, data);
 
     PETScWrappers::MPI::Vector residual(system_rhs);
-    PETScWrappers::MPI::Vector minus_solution(solution);
 
-    minus_solution *= -1; 
-    system_matrix.vmult_add(residual, minus_solution);
+    // minus_solution *= -1; 
+    // system_matrix.vmult_add(residual, minus_solution);
+    system_matrix.vmult(residual, solution);
+    residual -= system_rhs;
     double init_r_norm = residual.l2_norm();
     // std::cout<<init_r_norm<<" ";
 
     // 求解系统
     solver.solve(system_matrix, solution, system_rhs, preconditioner);
 
-    residual = system_rhs;
-    minus_solution = solution;
-    minus_solution *= -1;
-    system_matrix.vmult_add(residual, minus_solution);
+    system_matrix.vmult(residual, solution);
+    residual -= system_rhs;
     double final_r_norm = residual.l2_norm();  
     // std::cout<<final_r_norm<<std::endl;
 
