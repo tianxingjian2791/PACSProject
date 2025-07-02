@@ -92,7 +92,7 @@ def train(model, loader, optimizer, device):
     total_loss = 0
     
     for data in loader:
-        data = data.to(device)
+        # data = data.to(device)
         optimizer.zero_grad()
         
         # 前向传播
