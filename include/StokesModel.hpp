@@ -1,453 +1,700 @@
-#ifndef STOKESMODEL_HPP
-#define STOKESMODEL_HPP
-
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/function.h>
-#include <deal.II/base/conditional_ostream.h>
-#include <deal.II/base/convergence_table.h>
+#include <deal.II/base/timer.h>
+
+
+#include <deal.II/lac/generic_linear_algebra.h>
+
+/* #define FORCE_USE_OF_TRILINOS */
+
+namespace LA
+{
+#if defined(DEAL_II_WITH_PETSC) && !defined(DEAL_II_PETSC_WITH_COMPLEX) && \
+  !(defined(DEAL_II_WITH_TRILINOS) && defined(FORCE_USE_OF_TRILINOS))
+  using namespace dealii::LinearAlgebraPETSc;
+#  define USE_PETSC_LA
+#elif defined(DEAL_II_WITH_TRILINOS)
+  using namespace dealii::LinearAlgebraTrilinos;
+#else
+#  error DEAL_II_WITH_PETSC or DEAL_II_WITH_TRILINOS required
+#endif
+} // namespace LA
 
 #include <deal.II/lac/vector.h>
-#include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/full_matrix.h>
-#include <deal.II/lac/block_sparsity_pattern.h>
-#include <deal.II/lac/sparse_matrix.h>
-#include <deal.II/lac/solver_control.h>
-#include <deal.II/lac/petsc_block_sparse_matrix.h>
+#include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/solver_gmres.h>
+#include <deal.II/lac/solver_minres.h>
+#include <deal.II/lac/affine_constraints.h>
+#include <deal.II/lac/dynamic_sparsity_pattern.h>
+
+#include <deal.II/lac/petsc_sparse_matrix.h>
 #include <deal.II/lac/petsc_vector.h>
 #include <deal.II/lac/petsc_solver.h>
 #include <deal.II/lac/petsc_precondition.h>
-#include <deal.II/lac/dynamic_sparsity_pattern.h>
-#include <deal.II/lac/affine_constraints.h>
 
-#include <deal.II/grid/tria.h>
 #include <deal.II/grid/grid_generator.h>
-#include <deal.II/grid/grid_refinement.h>
-#include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/manifold_lib.h>
-
+#include <deal.II/grid/grid_tools.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_renumbering.h>
 #include <deal.II/dofs/dof_tools.h>
-
+#include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_system.h>
-#include <deal.II/fe/fe_values.h>
-#include <deal.II/fe/mapping_q1.h>
-
 #include <deal.II/numerics/vector_tools.h>
-#include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/data_out.h>
+#include <deal.II/numerics/error_estimator.h>
 
+#include <deal.II/base/utilities.h>
+#include <deal.II/base/conditional_ostream.h>
+#include <deal.II/base/index_set.h>
+#include <deal.II/lac/sparsity_tools.h>
+#include <deal.II/distributed/tria.h>
+#include <deal.II/distributed/grid_refinement.h>
+
+#include <cmath>
 #include <fstream>
 #include <iostream>
-#include <cmath>
-#include <vector>
 
-namespace StokesAMG
+namespace AMGStokes
 {
   using namespace dealii;
 
-  // 抛物线流入速度剖面
-  template <int dim>
-  class InflowVelocity : public Function<dim>
+
+
+  namespace LinearSolvers
   {
-  public:
-    InflowVelocity(double max_velocity)
-      : Function<dim>(dim), U(max_velocity)
+    template <class Matrix, class Preconditioner>
+    class InverseMatrix : public Subscriptor
+    {
+    public:
+      InverseMatrix(const Matrix &m, const Preconditioner &preconditioner);
+
+      template <typename VectorType>
+      void vmult(VectorType &dst, const VectorType &src) const;
+
+    private:
+      const SmartPointer<const Matrix> matrix;
+      const Preconditioner &           preconditioner;
+    };
+
+
+    template <class Matrix, class Preconditioner>
+    InverseMatrix<Matrix, Preconditioner>::InverseMatrix(
+      const Matrix &        m,
+      const Preconditioner &preconditioner)
+      : matrix(&m)
+      , preconditioner(preconditioner)
     {}
 
-    virtual void vector_value(const Point<dim> &p, Vector<double> &values) const override
+
+
+    template <class Matrix, class Preconditioner>
+    template <typename VectorType>
+    void
+    InverseMatrix<Matrix, Preconditioner>::vmult(VectorType &      dst,
+                                                const VectorType &src) const
     {
-      AssertDimension(values.size(), dim);
-      values = 0.0;
-      
-      // 在左边界(x=0)处应用抛物线剖面
-      const double y = p[1];
-      const double y_min = 0.0;
-      const double y_max = 0.41;
-      
-      // 抛物线流速: u_x = 4U * (y - y_min)(y_max - y)/(y_max - y_min)^2
-      values[0] = 4.0 * U * y * (y_max - y) / (y_max * y_max);
+      SolverControl        solver_control(src.size(), 1e-8 * src.l2_norm());
+      SolverCG<VectorType> cg(solver_control);
+      dst = 0;
+
+      try
+        {
+          cg.solve(*matrix, dst, src, preconditioner);
+        }
+      catch (std::exception &e)
+        {
+          Assert(false, ExcMessage(e.what()));
+        }
     }
 
-  private:
-    double U; // 最大流入速度
-  };
 
-  // 主求解器类
+    template <class PreconditionerA, class PreconditionerS>
+    class BlockDiagonalPreconditioner : public Subscriptor
+    {
+    public:
+      BlockDiagonalPreconditioner(const PreconditionerA &preconditioner_A,
+                                  const PreconditionerS &preconditioner_S);
+
+      void vmult(LA::MPI::BlockVector &      dst,
+                const LA::MPI::BlockVector &src) const;
+
+    private:
+      const PreconditionerA &preconditioner_A;
+      const PreconditionerS &preconditioner_S;
+    };
+
+    template <class PreconditionerA, class PreconditionerS>
+    BlockDiagonalPreconditioner<PreconditionerA, PreconditionerS>::
+      BlockDiagonalPreconditioner(const PreconditionerA &preconditioner_A,
+                                  const PreconditionerS &preconditioner_S)
+      : preconditioner_A(preconditioner_A)
+      , preconditioner_S(preconditioner_S)
+    {}
+
+
+    template <class PreconditionerA, class PreconditionerS>
+    void BlockDiagonalPreconditioner<PreconditionerA, PreconditionerS>::vmult(
+      LA::MPI::BlockVector &      dst,
+      const LA::MPI::BlockVector &src) const
+    {
+      preconditioner_A.vmult(dst.block(0), src.block(0));
+      preconditioner_S.vmult(dst.block(1), src.block(1));
+    }
+
+  } // namespace LinearSolvers
+
+
+
   template <int dim>
-  class StokesSolver
+  class RightHandSide : public Function<dim>
   {
   public:
-    StokesSolver(double viscosity, double inflow_velocity, double mesh_size, double theta);
-    void run(std::ofstream &file);
+    RightHandSide()
+      : Function<dim>(dim + 1)
+    {}
+
+    virtual void vector_value(const Point<dim> &p,
+                              Vector<double> &  value) const override;
+  };
+
+
+  template <int dim>
+  void RightHandSide<dim>::vector_value(const Point<dim> &p,
+                                        Vector<double> &  values) const
+  {
+    const double R_x = p[0];
+    const double R_y = p[1];
+
+    constexpr double pi  = numbers::PI;
+    constexpr double pi2 = numbers::PI * numbers::PI;
+
+    values[0] = -1.0L / 2.0L * (-2 * std::sqrt(25.0 + 4 * pi2) + 10.0) *
+                  std::exp(R_x * (-2 * std::sqrt(25.0 + 4 * pi2) + 10.0)) -
+                0.4 * pi2 * std::exp(R_x * (-std::sqrt(25.0 + 4 * pi2) + 5.0)) *
+                  std::cos(2 * R_y * pi) +
+                0.1 * std::pow(-std::sqrt(25.0 + 4 * pi2) + 5.0, 2) *
+                  std::exp(R_x * (-std::sqrt(25.0 + 4 * pi2) + 5.0)) *
+                  std::cos(2 * R_y * pi);
+    values[1] = 0.2 * pi * (-std::sqrt(25.0 + 4 * pi2) + 5.0) *
+                  std::exp(R_x * (-std::sqrt(25.0 + 4 * pi2) + 5.0)) *
+                  std::sin(2 * R_y * pi) -
+                0.05 * std::pow(-std::sqrt(25.0 + 4 * pi2) + 5.0, 3) *
+                  std::exp(R_x * (-std::sqrt(25.0 + 4 * pi2) + 5.0)) *
+                  std::sin(2 * R_y * pi) / pi;
+    values[2] = 0;
+  }
+
+
+  template <int dim>
+  class ExactSolution : public Function<dim>
+  {
+  public:
+    ExactSolution()
+      : Function<dim>(dim + 1)
+    {}
+
+    virtual void vector_value(const Point<dim> &p,
+                              Vector<double> &  values) const override;
+  };
+
+  template <int dim>
+  void ExactSolution<dim>::vector_value(const Point<dim> &p,
+                                        Vector<double> &  values) const
+  {
+    const double R_x = p[0];
+    const double R_y = p[1];
+
+    constexpr double pi  = numbers::PI;
+    constexpr double pi2 = numbers::PI * numbers::PI;
+
+    values[0] = -std::exp(R_x * (-std::sqrt(25.0 + 4 * pi2) + 5.0)) *
+                  std::cos(2 * R_y * pi) +
+                1;
+    values[1] = (1.0L / 2.0L) * (-std::sqrt(25.0 + 4 * pi2) + 5.0) *
+                std::exp(R_x * (-std::sqrt(25.0 + 4 * pi2) + 5.0)) *
+                std::sin(2 * R_y * pi) / pi;
+    values[2] =
+      -1.0L / 2.0L * std::exp(R_x * (-2 * std::sqrt(25.0 + 4 * pi2) + 10.0)) -
+      2.0 *
+        (-6538034.74494422 +
+        0.0134758939981709 * std::exp(4 * std::sqrt(25.0 + 4 * pi2))) /
+        (-80.0 * std::exp(3 * std::sqrt(25.0 + 4 * pi2)) +
+        16.0 * std::sqrt(25.0 + 4 * pi2) *
+          std::exp(3 * std::sqrt(25.0 + 4 * pi2))) -
+      1634508.68623606 * std::exp(-3.0 * std::sqrt(25.0 + 4 * pi2)) /
+        (-10.0 + 2.0 * std::sqrt(25.0 + 4 * pi2)) +
+      (-0.00673794699908547 * std::exp(std::sqrt(25.0 + 4 * pi2)) +
+      3269017.37247211 * std::exp(-3 * std::sqrt(25.0 + 4 * pi2))) /
+        (-8 * std::sqrt(25.0 + 4 * pi2) + 40.0) +
+      0.00336897349954273 * std::exp(1.0 * std::sqrt(25.0 + 4 * pi2)) /
+        (-10.0 + 2.0 * std::sqrt(25.0 + 4 * pi2));
+  }
+
+
+
+  template <int dim>
+  class StokesProblem
+  {
+  public:
+    StokesProblem(unsigned int velocity_degree);
+
+    void run();
 
   private:
     void make_grid();
     void setup_system();
     void assemble_system();
-    double solve();
-    void write_matrix_to_csv(std::ofstream &file, double rho);
-    void save_sample(double rho);
+    void solve();
+    void refine_grid();
+    void output_results(const unsigned int cycle) const;
 
-    // 辅助函数：生成线性间隔数组
-    static std::vector<double> linspace(double start, double end, size_t num_points);
+    unsigned int velocity_degree;
+    double       viscosity;
+    MPI_Comm     mpi_communicator;
 
-    // 参数
-    double viscosity;      // ν (运动粘度)
-    double inflow_velocity; // U (最大流入速度)
-    double mesh_size;      // h (目标网格尺寸)
-    double theta;          // AMG强阈值参数
+    FESystem<dim>                             fe;
+    parallel::distributed::Triangulation<dim> triangulation;
+    DoFHandler<dim>                           dof_handler;
 
-    // 实际网格尺寸
-    double global_h;
+    std::vector<IndexSet> owned_partitioning;
+    std::vector<IndexSet> relevant_partitioning;
 
-    // 网格和有限元
-    Triangulation<dim> triangulation;
-    FESystem<dim>     velocity_fe;
-    FE_Q<dim>         pressure_fe;
-    DoFHandler<dim>   dof_handler;
-
-    // 约束
     AffineConstraints<double> constraints;
 
-    // 系统矩阵和向量
-    BlockSparsityPattern      sparsity_pattern;
-    PETScWrappers::MPI::BlockSparseMatrix system_matrix;
-    PETScWrappers::MPI::BlockVector solution;
-    PETScWrappers::MPI::BlockVector system_rhs;
+    LA::MPI::BlockSparseMatrix system_matrix;
+    LA::MPI::BlockSparseMatrix preconditioner_matrix;
+    LA::MPI::BlockVector       locally_relevant_solution;
+    LA::MPI::BlockVector       system_rhs;
 
-    // 求解器控制
-    SolverControl solver_control;
+    ConditionalOStream pcout;
+    TimerOutput        computing_timer;
   };
 
+
+
   template <int dim>
-  StokesSolver<dim>::StokesSolver(double viscosity, double inflow_velocity, 
-                                  double mesh_size, double theta)
-    : viscosity(viscosity)
-    , inflow_velocity(inflow_velocity)
-    , mesh_size(mesh_size)
-    , theta(theta)
-    , velocity_fe(FE_Q<dim>(2), dim)  // Q2 速度元
-    , pressure_fe(1)                  // Q1 压力元
+  StokesProblem<dim>::StokesProblem(unsigned int velocity_degree)
+    : velocity_degree(velocity_degree)
+    , viscosity(0.1)
+    , mpi_communicator(MPI_COMM_WORLD)
+    , fe(FE_Q<dim>(velocity_degree), dim, FE_Q<dim>(velocity_degree - 1), 1)
+    , triangulation(mpi_communicator,
+                    typename Triangulation<dim>::MeshSmoothing(
+                      Triangulation<dim>::smoothing_on_refinement |
+                      Triangulation<dim>::smoothing_on_coarsening))
     , dof_handler(triangulation)
-    , solver_control(1000, 1e-12)     // 最大迭代次数1000，容差1e-12
+    , pcout(std::cout,
+            (Utilities::MPI::this_mpi_process(mpi_communicator) == 0))
+    , computing_timer(mpi_communicator,
+                      pcout,
+                      TimerOutput::never,
+                      TimerOutput::wall_times)
   {}
 
+
   template <int dim>
-  void StokesSolver<dim>::make_grid()
+  void StokesProblem<dim>::make_grid()
   {
-    // 创建矩形域 [0, 2.2] x [0, 0.41]
-    Point<dim> corner1(0, 0);
-    Point<dim> corner2(2.2, 0.41);
-    GridGenerator::hyper_rectangle(triangulation, corner1, corner2);
-    
-    // 创建圆柱孔洞 (圆心(0.2,0.2), 半径0.05)
-    Point<dim> center(0.2, 0.2);
-    const double radius = 0.05;
-    
-    // 定义圆柱的流形描述
-    static SphericalManifold<dim> manifold(center);
-    
-    // 创建圆柱孔洞
-    GridGenerator::hyper_ball(triangulation, center, radius);
-    triangulation.set_all_manifold_ids(0);
-    triangulation.set_manifold(0, manifold);
-    
-    // 细化网格以达到目标尺寸
-    triangulation.refine_global(static_cast<unsigned int>(std::log2(0.14 / mesh_size)));
-    
-    // 存储实际网格尺寸
-    global_h = GridTools::maximal_cell_diameter(triangulation);
+    GridGenerator::hyper_cube(triangulation, -0.5, 1.5);
+    triangulation.refine_global(3);
   }
 
   template <int dim>
-  void StokesSolver<dim>::setup_system()
+  void StokesProblem<dim>::setup_system()
   {
-    // 混合有限元空间 (速度 + 压力)
-    FESystem<dim> fe(velocity_fe, 1, pressure_fe, 1);
+    TimerOutput::Scope t(computing_timer, "setup");
+
     dof_handler.distribute_dofs(fe);
-    
-    // 输出自由度信息
-    std::cout << "Number of degrees of freedom: " << dof_handler.n_dofs()
-              << " (Velocity: " << dof_handler.n_dofs() - pressure_fe.n_dofs()
-              << ", Pressure: " << pressure_fe.n_dofs() << ")" << std::endl;
 
-    // 初始化MPI变量 (串行情况下使用单个进程)
-    std::vector<IndexSet> locally_owned_dofs;
-    std::vector<IndexSet> locally_relevant_dofs;
-    MGTools::count_dofs_per_block(dof_handler, locally_owned_dofs, locally_relevant_dofs);
+    std::vector<unsigned int> stokes_sub_blocks(dim + 1, 0);
+    stokes_sub_blocks[dim] = 1;
+    DoFRenumbering::component_wise(dof_handler, stokes_sub_blocks);
 
-    // 设置约束 (边界条件)
-    constraints.clear();
-    DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-    
-    // 应用边界条件:
-    // - Γ0: 无滑移边界 (速度=0)
-    // - Γin: 流入边界 (抛物线速度剖面)
-    // - Γout: 自然边界条件 (自由流出)
-    InflowVelocity<dim> inflow_profile(inflow_velocity);
-    
-    // 标记边界: 0=左边界(流入), 1=右边界(流出), 2=其他边界(无滑移)
-    std::map<types::boundary_id, const Function<dim> *> boundary_functions;
-    VectorTools::interpolate_boundary_values(dof_handler, 0, inflow_profile, constraints);
-    VectorTools::interpolate_boundary_values(dof_handler, 2, Functions::ZeroFunction<dim>(dim+1), constraints);
-    
-    constraints.close();
+    const std::vector<types::global_dof_index> dofs_per_block =
+      DoFTools::count_dofs_per_fe_block(dof_handler, stokes_sub_blocks);
 
-    // 创建块稀疏模式
-    BlockDynamicSparsityPattern dsp(2, 2);
-    DoFTools::make_sparsity_pattern(dof_handler, dsp, constraints, false);
-    dsp.compress();
-    
-    // 初始化块矩阵和向量
-    system_matrix.reinit(locally_owned_dofs, dsp, MPI_COMM_WORLD);
-    solution.reinit(locally_owned_dofs, MPI_COMM_WORLD);
-    system_rhs.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+    const unsigned int n_u = dofs_per_block[0];
+    const unsigned int n_p = dofs_per_block[1];
+
+    pcout << "   Number of degrees of freedom: " << dof_handler.n_dofs() << " ("
+          << n_u << '+' << n_p << ')' << std::endl;
+
+    owned_partitioning.resize(2);
+    owned_partitioning[0] = dof_handler.locally_owned_dofs().get_view(0, n_u);
+    owned_partitioning[1] =
+      dof_handler.locally_owned_dofs().get_view(n_u, n_u + n_p);
+
+    const IndexSet locally_relevant_dofs =
+      DoFTools::extract_locally_relevant_dofs(dof_handler);
+    relevant_partitioning.resize(2);
+    relevant_partitioning[0] = locally_relevant_dofs.get_view(0, n_u);
+    relevant_partitioning[1] = locally_relevant_dofs.get_view(n_u, n_u + n_p);
+
+    {
+      constraints.reinit(locally_relevant_dofs);
+
+      const FEValuesExtractors::Vector velocities(0);
+      DoFTools::make_hanging_node_constraints(dof_handler, constraints);
+      VectorTools::interpolate_boundary_values(dof_handler,
+                                              0,
+                                              ExactSolution<dim>(),
+                                              constraints,
+                                              fe.component_mask(velocities));
+      constraints.close();
+    }
+
+    {
+      system_matrix.clear();
+
+      Table<2, DoFTools::Coupling> coupling(dim + 1, dim + 1);
+      for (unsigned int c = 0; c < dim + 1; ++c)
+        for (unsigned int d = 0; d < dim + 1; ++d)
+          if (c == dim && d == dim)
+            coupling[c][d] = DoFTools::none;
+          else if (c == dim || d == dim || c == d)
+            coupling[c][d] = DoFTools::always;
+          else
+            coupling[c][d] = DoFTools::none;
+
+      BlockDynamicSparsityPattern dsp(relevant_partitioning);
+
+      DoFTools::make_sparsity_pattern(
+        dof_handler, coupling, dsp, constraints, false);
+
+      SparsityTools::distribute_sparsity_pattern(
+        dsp,
+        dof_handler.locally_owned_dofs(),
+        mpi_communicator,
+        locally_relevant_dofs);
+
+      system_matrix.reinit(owned_partitioning, dsp, mpi_communicator);
+    }
+
+    {
+      preconditioner_matrix.clear();
+
+      Table<2, DoFTools::Coupling> coupling(dim + 1, dim + 1);
+      for (unsigned int c = 0; c < dim + 1; ++c)
+        for (unsigned int d = 0; d < dim + 1; ++d)
+          if (c == dim && d == dim)
+            coupling[c][d] = DoFTools::always;
+          else
+            coupling[c][d] = DoFTools::none;
+
+      BlockDynamicSparsityPattern dsp(relevant_partitioning);
+
+      DoFTools::make_sparsity_pattern(
+        dof_handler, coupling, dsp, constraints, false);
+      SparsityTools::distribute_sparsity_pattern(
+        dsp,
+        Utilities::MPI::all_gather(mpi_communicator,
+                                  dof_handler.locally_owned_dofs()),
+        mpi_communicator,
+        locally_relevant_dofs);
+      preconditioner_matrix.reinit(owned_partitioning, dsp, mpi_communicator);
+    }
+
+    locally_relevant_solution.reinit(owned_partitioning,
+                                    relevant_partitioning,
+                                    mpi_communicator);
+    system_rhs.reinit(owned_partitioning, mpi_communicator);
   }
 
+
+
   template <int dim>
-  void StokesSolver<dim>::assemble_system()
+  void StokesProblem<dim>::assemble_system()
   {
-    QGauss<dim> quadrature_formula(velocity_fe.degree + 1);
-    
-    FEValues<dim> fe_values(velocity_fe, quadrature_formula,
+    TimerOutput::Scope t(computing_timer, "assembly");
+
+    system_matrix         = 0;
+    preconditioner_matrix = 0;
+    system_rhs            = 0;
+
+    const QGauss<dim> quadrature_formula(velocity_degree + 1);
+
+    FEValues<dim> fe_values(fe,
+                            quadrature_formula,
                             update_values | update_gradients |
-                            update_JxW_values | update_quadrature_points);
-    
-    const unsigned int dofs_per_cell = velocity_fe.n_dofs_per_cell();
-    const unsigned int n_q_points = quadrature_formula.size();
-    
+                              update_quadrature_points | update_JxW_values);
+
+    const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
+    const unsigned int n_q_points    = quadrature_formula.size();
+
     FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
-    Vector<double> cell_rhs(dofs_per_cell);
-    
+    FullMatrix<double> cell_matrix2(dofs_per_cell, dofs_per_cell);
+    Vector<double>     cell_rhs(dofs_per_cell);
+
+    const RightHandSide<dim>    right_hand_side;
+    std::vector<Vector<double>> rhs_values(n_q_points, Vector<double>(dim + 1));
+
+    std::vector<Tensor<2, dim>> grad_phi_u(dofs_per_cell);
+    std::vector<double>         div_phi_u(dofs_per_cell);
+    std::vector<double>         phi_p(dofs_per_cell);
+
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-    
-    // 遍历所有单元
+    const FEValuesExtractors::Vector     velocities(0);
+    const FEValuesExtractors::Scalar     pressure(dim);
+
     for (const auto &cell : dof_handler.active_cell_iterators())
-    {
-      fe_values.reinit(cell);
-      cell_matrix = 0;
-      cell_rhs = 0;
-      
-      // 组装单元矩阵和右端项
-      for (unsigned int q = 0; q < n_q_points; ++q)
-      {
-        // 粘性项: ν ∫∇u:∇v dx
-        for (unsigned int i = 0; i < dofs_per_cell; ++i)
+      if (cell->is_locally_owned())
         {
-          const unsigned int component_i = velocity_fe.system_to_component_index(i).first;
-          
-          for (unsigned int j = 0; j < dofs_per_cell; ++j)
-          {
-            const unsigned int component_j = velocity_fe.system_to_component_index(j).first;
-            
-            if (component_i == component_j)
+          cell_matrix  = 0;
+          cell_matrix2 = 0;
+          cell_rhs     = 0;
+
+          fe_values.reinit(cell);
+          right_hand_side.vector_value_list(fe_values.get_quadrature_points(),
+                                            rhs_values);
+          for (unsigned int q = 0; q < n_q_points; ++q)
             {
-              cell_matrix(i, j) += viscosity *
-                                   fe_values.shape_grad(i, q) *
-                                   fe_values.shape_grad(j, q) *
-                                   fe_values.JxW(q);
+              for (unsigned int k = 0; k < dofs_per_cell; ++k)
+                {
+                  grad_phi_u[k] = fe_values[velocities].gradient(k, q);
+                  div_phi_u[k]  = fe_values[velocities].divergence(k, q);
+                  phi_p[k]      = fe_values[pressure].value(k, q);
+                }
+
+              for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                {
+                  for (unsigned int j = 0; j < dofs_per_cell; ++j)
+                    {
+                      cell_matrix(i, j) +=
+                        (viscosity *
+                          scalar_product(grad_phi_u[i], grad_phi_u[j]) -
+                        div_phi_u[i] * phi_p[j] - phi_p[i] * div_phi_u[j]) *
+                        fe_values.JxW(q);
+
+                      cell_matrix2(i, j) += 1.0 / viscosity * phi_p[i] *
+                                            phi_p[j] * fe_values.JxW(q);
+                    }
+
+                  const unsigned int component_i =
+                    fe.system_to_component_index(i).first;
+                  cell_rhs(i) += fe_values.shape_value(i, q) *
+                                rhs_values[q](component_i) * fe_values.JxW(q);
+                }
             }
-          }
+
+
+          cell->get_dof_indices(local_dof_indices);
+          constraints.distribute_local_to_global(cell_matrix,
+                                                cell_rhs,
+                                                local_dof_indices,
+                                                system_matrix,
+                                                system_rhs);
+
+          constraints.distribute_local_to_global(cell_matrix2,
+                                                local_dof_indices,
+                                                preconditioner_matrix);
         }
-      }
-      
-      // 将单元贡献添加到全局系统
-      cell->get_dof_indices(local_dof_indices);
-      constraints.distribute_local_to_global(cell_matrix, cell_rhs,
-                                            local_dof_indices,
-                                            system_matrix, system_rhs);
-    }
-    
-    // 应用约束并压缩矩阵
+
     system_matrix.compress(VectorOperation::add);
+    preconditioner_matrix.compress(VectorOperation::add);
     system_rhs.compress(VectorOperation::add);
   }
 
-  template <int dim>
-  double StokesSolver<dim>::solve()
-  {
-    // 设置求解器 (MINRES 用于对称不定系统)
-    PETScWrappers::SolverMinRes solver(solver_control, MPI_COMM_WORLD);
-    
-    // 设置块对角预处理器:
-    //   [A 0]
-    //   [0 M]
-    PETScWrappers::PreconditionBoomerAMG A_preconditioner;
-    PETScWrappers::PreconditionBoomerAMG M_preconditioner;
-    
-    // 配置速度块AMG参数
-    PETScWrappers::PreconditionBoomerAMG::AdditionalData A_data;
-    A_data.strong_threshold = theta;
-    A_data.symmetric_operator = true;
-    A_preconditioner.initialize(system_matrix.block(0,0), A_data);
-    
-    // 配置压力质量矩阵AMG参数
-    PETScWrappers::PreconditionBoomerAMG::AdditionalData M_data;
-    M_data.strong_threshold = 0.25; // 压力块使用固定阈值
-    M_preconditioner.initialize(system_matrix.block(1,1), M_data);
-    
-    // 设置块对角预处理器
-    BlockDiagonalPreconditioner<PETScWrappers::PreconditionBase> preconditioner;
-    preconditioner.subscribe(A_preconditioner);
-    preconditioner.subscribe(M_preconditioner);
-    
-    // 求解系统
-    solver.solve(system_matrix, solution, system_rhs, preconditioner);
-    
-    // 计算收敛因子 ρ = (||r_k|| / ||r_0||)^{1/k}
-    const unsigned int k = solver_control.last_step();
-    if (k < 1) {
-      std::cerr << "Warning: Insufficient residuals recorded. Returning rho=0." << std::endl;
-      return 0.0;
-    }
-    
-    // 计算最终残差范数
-    PETScWrappers::MPI::BlockVector residual(system_rhs);
-    system_matrix.residual(residual, solution, system_rhs);
-    const double final_residual = residual.l2_norm();
-    
-    // 计算初始残差范数
-    const double initial_residual = system_rhs.l2_norm();
-    
-    return std::pow(final_residual / initial_residual, 1.0 / k);
-  }
+
 
   template <int dim>
-  void StokesSolver<dim>::write_matrix_to_csv(std::ofstream &file, double rho)
+  void StokesProblem<dim>::solve()
   {
-    // 只保存速度块矩阵 (A_block)
-    auto &velocity_matrix = system_matrix.block(0,0);
-    
-    const unsigned int m = velocity_matrix.m();
-    const unsigned int n = velocity_matrix.n();
-    
-    // 获取矩阵本地部分
-    PetscInt start, end;
-    MatGetOwnershipRange(velocity_matrix, &start, &end);
-    
-    std::vector<PetscInt> row_ptr;
-    std::vector<PetscInt> col_ind;
-    std::vector<PetscScalar> values;
-    
-    PetscInt idx = 0;
-    for (PetscInt i = start; i < end; i++)
+    TimerOutput::Scope t(computing_timer, "solve");
+
+    LA::MPI::PreconditionAMG prec_A;
     {
-      PetscInt ncols;
-      const PetscInt *cols;
-      const PetscScalar *vals;
-      MatGetRow(velocity_matrix, i, &ncols, &cols, &vals);
-      
-      row_ptr.push_back(idx);
-      for (PetscInt j = 0; j < ncols; j++)
+      LA::MPI::PreconditionAMG::AdditionalData data;
+
+#ifdef USE_PETSC_LA
+      data.symmetric_operator = true;
+#endif
+      prec_A.initialize(system_matrix.block(0, 0), data);
+    }
+
+    LA::MPI::PreconditionAMG prec_S;
+    {
+      LA::MPI::PreconditionAMG::AdditionalData data;
+
+#ifdef USE_PETSC_LA
+      data.symmetric_operator = true;
+#endif
+      prec_S.initialize(preconditioner_matrix.block(1, 1), data);
+    }
+
+    using mp_inverse_t = LinearSolvers::InverseMatrix<LA::MPI::SparseMatrix,
+                                                      LA::MPI::PreconditionAMG>;
+    const mp_inverse_t mp_inverse(preconditioner_matrix.block(1, 1), prec_S);
+
+    const LinearSolvers::BlockDiagonalPreconditioner<LA::MPI::PreconditionAMG,
+                                                    mp_inverse_t>
+      preconditioner(prec_A, mp_inverse);
+
+    SolverControl solver_control(system_matrix.m(),
+                                1e-10 * system_rhs.l2_norm());
+
+    SolverMinRes<LA::MPI::BlockVector> solver(solver_control);
+
+    LA::MPI::BlockVector distributed_solution(owned_partitioning,
+                                              mpi_communicator);
+
+    constraints.set_zero(distributed_solution);
+
+    solver.solve(system_matrix,
+                distributed_solution,
+                system_rhs,
+                preconditioner);
+
+    pcout << "   Solved in " << solver_control.last_step() << " iterations."
+          << std::endl;
+
+    constraints.distribute(distributed_solution);
+
+    locally_relevant_solution = distributed_solution;
+    const double mean_pressure =
+      VectorTools::compute_mean_value(dof_handler,
+                                      QGauss<dim>(velocity_degree + 2),
+                                      locally_relevant_solution,
+                                      dim);
+    distributed_solution.block(1).add(-mean_pressure);
+    locally_relevant_solution.block(1) = distributed_solution.block(1);
+  }
+
+
+
+  template <int dim>
+  void StokesProblem<dim>::refine_grid()
+  {
+    TimerOutput::Scope t(computing_timer, "refine");
+
+    triangulation.refine_global();
+  }
+
+
+
+  template <int dim>
+  void StokesProblem<dim>::output_results(const unsigned int cycle) const
+  {
+    {
+      const ComponentSelectFunction<dim> pressure_mask(dim, dim + 1);
+      const ComponentSelectFunction<dim> velocity_mask(std::make_pair(0, dim),
+                                                      dim + 1);
+
+      Vector<double> cellwise_errors(triangulation.n_active_cells());
+      QGauss<dim>    quadrature(velocity_degree + 2);
+
+      VectorTools::integrate_difference(dof_handler,
+                                        locally_relevant_solution,
+                                        ExactSolution<dim>(),
+                                        cellwise_errors,
+                                        quadrature,
+                                        VectorTools::L2_norm,
+                                        &velocity_mask);
+
+      const double error_u_l2 =
+        VectorTools::compute_global_error(triangulation,
+                                          cellwise_errors,
+                                          VectorTools::L2_norm);
+
+      VectorTools::integrate_difference(dof_handler,
+                                        locally_relevant_solution,
+                                        ExactSolution<dim>(),
+                                        cellwise_errors,
+                                        quadrature,
+                                        VectorTools::L2_norm,
+                                        &pressure_mask);
+
+      const double error_p_l2 =
+        VectorTools::compute_global_error(triangulation,
+                                          cellwise_errors,
+                                          VectorTools::L2_norm);
+
+      pcout << "error: u_0: " << error_u_l2 << " p_0: " << error_p_l2
+            << std::endl;
+    }
+
+
+    std::vector<std::string> solution_names(dim, "velocity");
+    solution_names.emplace_back("pressure");
+    std::vector<DataComponentInterpretation::DataComponentInterpretation>
+      data_component_interpretation(
+        dim, DataComponentInterpretation::component_is_part_of_vector);
+    data_component_interpretation.push_back(
+      DataComponentInterpretation::component_is_scalar);
+
+    DataOut<dim> data_out;
+    data_out.attach_dof_handler(dof_handler);
+    data_out.add_data_vector(locally_relevant_solution,
+                            solution_names,
+                            DataOut<dim>::type_dof_data,
+                            data_component_interpretation);
+
+    LA::MPI::BlockVector interpolated;
+    interpolated.reinit(owned_partitioning, MPI_COMM_WORLD);
+    VectorTools::interpolate(dof_handler, ExactSolution<dim>(), interpolated);
+
+    LA::MPI::BlockVector interpolated_relevant(owned_partitioning,
+                                              relevant_partitioning,
+                                              MPI_COMM_WORLD);
+    interpolated_relevant = interpolated;
+    {
+      std::vector<std::string> solution_names(dim, "ref_u");
+      solution_names.emplace_back("ref_p");
+      data_out.add_data_vector(interpolated_relevant,
+                              solution_names,
+                              DataOut<dim>::type_dof_data,
+                              data_component_interpretation);
+    }
+
+
+    Vector<float> subdomain(triangulation.n_active_cells());
+    for (unsigned int i = 0; i < subdomain.size(); ++i)
+      subdomain(i) = triangulation.locally_owned_subdomain();
+    data_out.add_data_vector(subdomain, "subdomain");
+
+    data_out.build_patches();
+
+    data_out.write_vtu_with_pvtu_record(
+      "./", "solution", cycle, mpi_communicator, 2);
+  }
+
+
+
+  template <int dim>
+  void StokesProblem<dim>::run()
+  {
+#ifdef USE_PETSC_LA
+    pcout << "Running using PETSc." << std::endl;
+#else
+    pcout << "Running using Trilinos." << std::endl;
+#endif
+    const unsigned int n_cycles = 5;
+    for (unsigned int cycle = 0; cycle < n_cycles; ++cycle)
       {
-        // 过滤接近零的值
-        if (std::abs(vals[j]) > 1e-12)
-        {
-          col_ind.push_back(cols[j]);
-          values.push_back(vals[j]);
-          idx++;
-        }
-      }
-      MatRestoreRow(velocity_matrix, i, &ncols, &cols, &vals);
-    }
-    row_ptr.push_back(idx);
-    
-    // 写入样本元数据
-    file << viscosity << "," << inflow_velocity << "," << global_h << "," << theta << "," << rho;
-    
-    // 写入矩阵维度信息
-    file << "," << m << "," << n << "," << values.size();
-    
-    // 写入矩阵非零值
-    for (const auto &val : values)
-      file << "," << val;
-    
-    // 写入行指针
-    for (const auto &ptr : row_ptr)
-      file << "," << ptr;
-    
-    // 写入列索引
-    for (const auto &col : col_ind)
-      file << "," << col;
-    
-    file << "\n";
-  }
+        pcout << "Cycle " << cycle << ':' << std::endl;
 
-  template <int dim>
-  void StokesSolver<dim>::run(std::ofstream &file)
-  {
-    // 创建网格和系统
-    make_grid();
-    setup_system();
-    assemble_system();
-    
-    // 求解系统并获取收敛因子
-    double rho = solve();
-    
-    // 保存样本数据
-    write_matrix_to_csv(file, rho);
-  }
+        if (cycle == 0)
+          make_grid();
+        else
+          refine_grid();
 
-  template <int dim>
-  std::vector<double> StokesSolver<dim>::linspace(double start, double end, size_t num_points)
-  {
-    std::vector<double> result;
-    if (num_points == 0) return result;
-    if (num_points == 1) {
-        result.push_back(start);
-        return result;
-    }
-    
-    double step = (end - start) / (num_points - 1);
-    for (size_t i = 0; i < num_points; i++) {
-        result.push_back(start + i * step);
-    }
-    return result;
-  }
+        setup_system();
 
-  // 数据集生成函数
-  void generate_stokes_dataset()
-  {
-    // 打开输出文件
-    std::ofstream file("./datasets/train/raw/stokes_dataset.csv");
-    
-    // 参数范围 (3600个样本 = 3ν × 4U × 6h × 25θ)
-    const std::vector<double> viscosities = {0.001, 0.1, 10.0};
-    const std::vector<double> inflow_velocities = {0.00001, 0.001, 0.1, 10.0};
-    const std::vector<double> mesh_sizes = {0.14, 0.07, 0.035, 0.0175, 0.00875, 0.004375};
-    const std::vector<double> theta_values = linspace(0.02, 0.9, 25);
-    
-    unsigned int sample_count = 0;
-    const unsigned int total_samples = viscosities.size() * 
-                                      inflow_velocities.size() * 
-                                      mesh_sizes.size() * 
-                                      theta_values.size();
-    
-    // CSV文件头
-    // file << "viscosity,inflow_velocity,mesh_size,theta,rho,matrix_rows,matrix_cols,nnz";
-    
-    // 遍历所有参数组合
-    for (double nu : viscosities) {
-      for (double U : inflow_velocities) {
-        for (double h : mesh_sizes) {
-          for (double theta : theta_values) {
-            std::cout << "Processing sample " << (++sample_count) << "/" << total_samples
-                      << " (ν=" << nu << ", U=" << U << ", h=" << h << ", θ=" << theta << ")" 
-                      << std::endl;
-            
-            // 创建并运行求解器
-            StokesSolver<2> solver(nu, U, h, theta);
-            solver.run(file);
+        assemble_system();
+        solve();
+
+        if (Utilities::MPI::n_mpi_processes(mpi_communicator) <= 32)
+          {
+            TimerOutput::Scope t(computing_timer, "output");
+            output_results(cycle);
           }
-        }
+
+        computing_timer.print_summary();
+        computing_timer.reset();
+
+        pcout << std::endl;
       }
-    }
-    
-    std::cout << "Stokes dataset generation complete. Total samples: " << sample_count << std::endl;
   }
-
-} // namespace StokesAMG
-
-#endif // STOKESMODEL_HPP
+} // namespace AMGStokes
