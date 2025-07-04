@@ -239,20 +239,42 @@ namespace AMGStokes
   class StokesProblem
   {
   public:
-    StokesProblem(unsigned int velocity_degree);
+    StokesProblem(unsigned int velocity_degree, double viscosity, unsigned int boundary_choice);
 
-    void run();
+    void run(std::ofstream &file);
+    void set_theta(double theta);
+
+
+    // 辅助函数：生成线性间隔数组
+    static std::vector<double> linspace(double start, double end, size_t num_points) 
+    {
+      std::vector<double> result;
+      if (num_points == 0) return result;
+      if (num_points == 1) {
+          result.push_back(start);
+          return result;
+      }
+      
+      double step = (end - start) / (num_points - 1);
+      for (size_t i = 0; i < num_points; i++) {
+          result.push_back(start + i * step);
+      }
+      return result;
+    }
 
   private:
     void make_grid();
     void setup_system();
     void assemble_system();
-    void solve();
+    void solve(std::ofstream &file);
     void refine_grid();
-    void output_results(const unsigned int cycle) const;
+    // void output_results(const unsigned int cycle) const;
+    void write_matrix_to_csv(const LA::MPI::BlockSparseMatrix &matrix, std::ofstream &file, double rho, double h);
 
     unsigned int velocity_degree;
     double       viscosity;
+    double       theta;
+    unsigned int boundary_choice;
     MPI_Comm     mpi_communicator;
 
     FESystem<dim>                             fe;
@@ -276,9 +298,10 @@ namespace AMGStokes
 
 
   template <int dim>
-  StokesProblem<dim>::StokesProblem(unsigned int velocity_degree)
+  StokesProblem<dim>::StokesProblem(unsigned int velocity_degree, double viscosity, unsigned int boundary_choice)
     : velocity_degree(velocity_degree)
-    , viscosity(0.1)
+    , viscosity(viscosity)
+    , boundary_choice(boundary_choice)
     , mpi_communicator(MPI_COMM_WORLD)
     , fe(FE_Q<dim>(velocity_degree), dim, FE_Q<dim>(velocity_degree - 1), 1)
     , triangulation(mpi_communicator,
@@ -294,12 +317,36 @@ namespace AMGStokes
                       TimerOutput::wall_times)
   {}
 
+  template <int dim>
+  void StokesProblem<dim>::set_theta(double theta)
+  {
+    this -> theta = theta;
+  }
+
 
   template <int dim>
   void StokesProblem<dim>::make_grid()
   {
     GridGenerator::hyper_cube(triangulation, -0.5, 1.5);
-    triangulation.refine_global(3);
+    if (boundary_choice == 0)
+    {
+
+    }
+    else
+    {
+            // 标记右边界为ID=1 (x=1.5)
+      for (auto &cell : triangulation.active_cell_iterators()) {
+        for (unsigned int f = 0; f < GeometryInfo<dim>::faces_per_cell; ++f) {
+            if (cell->face(f)->at_boundary()) {
+                const Point<dim> center = cell->face(f)->center();
+                if (center[0] > 1.4) { // x≈1.5 (考虑浮点误差)
+                    cell->face(f)->set_boundary_id(1);
+                }
+              }
+            }
+          }
+    }
+    triangulation.refine_global(2);  // old = 3, new = 2. Consider the computing ability of my laptop.
   }
 
   template <int dim>
@@ -319,8 +366,8 @@ namespace AMGStokes
     const unsigned int n_u = dofs_per_block[0];
     const unsigned int n_p = dofs_per_block[1];
 
-    pcout << "   Number of degrees of freedom: " << dof_handler.n_dofs() << " ("
-          << n_u << '+' << n_p << ')' << std::endl;
+    // pcout << "   Number of degrees of freedom: " << dof_handler.n_dofs() << " ("
+    //       << n_u << '+' << n_p << ')' << std::endl;
 
     owned_partitioning.resize(2);
     owned_partitioning[0] = dof_handler.locally_owned_dofs().get_view(0, n_u);
@@ -338,11 +385,33 @@ namespace AMGStokes
 
       const FEValuesExtractors::Vector velocities(0);
       DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-      VectorTools::interpolate_boundary_values(dof_handler,
-                                              0,
-                                              ExactSolution<dim>(),
-                                              constraints,
-                                              fe.component_mask(velocities));
+      if (boundary_choice == 0)
+      {
+        VectorTools::interpolate_boundary_values(dof_handler,
+          0,
+          ExactSolution<dim>(),
+          constraints,
+          fe.component_mask(velocities));
+      }
+      else
+      {
+        // 在ID=1的边界施加常数边界条件
+        VectorTools::interpolate_boundary_values(
+          dof_handler,
+          1, // 现在ID=1的边界存在
+          Functions::ConstantFunction<dim>(1.0, dim+1),
+          constraints,
+          fe.component_mask(velocities));
+
+        // 可选：在其他边界保持原始条件
+        VectorTools::interpolate_boundary_values(
+          dof_handler,
+          0, // 默认边界ID=0
+          Functions::ZeroFunction<dim>(dim+1), // 改为零边界
+          constraints,
+          fe.component_mask(velocities));
+      }
+
       constraints.close();
     }
 
@@ -447,8 +516,19 @@ namespace AMGStokes
           cell_rhs     = 0;
 
           fe_values.reinit(cell);
-          right_hand_side.vector_value_list(fe_values.get_quadrature_points(),
-                                            rhs_values);
+          // right_hand_side.vector_value_list(fe_values.get_quadrature_points(),
+          //                                   rhs_values);
+
+          // 修改右端项：驱动腔流时设为0
+          if (boundary_choice == 0) { // 封闭腔体流
+            right_hand_side.vector_value_list(fe_values.get_quadrature_points(),
+                                              rhs_values);
+          } else { // 驱动腔流
+            for (auto &vec : rhs_values) {
+              vec = 0; // 零源项
+            }
+          }
+          
           for (unsigned int q = 0; q < n_q_points; ++q)
             {
               for (unsigned int k = 0; k < dofs_per_cell; ++k)
@@ -500,7 +580,7 @@ namespace AMGStokes
 
 
   template <int dim>
-  void StokesProblem<dim>::solve()
+  void StokesProblem<dim>::solve(std::ofstream &file)
   {
     TimerOutput::Scope t(computing_timer, "solve");
 
@@ -510,6 +590,7 @@ namespace AMGStokes
 
 #ifdef USE_PETSC_LA
       data.symmetric_operator = true;
+      data.strong_threshold = theta;
 #endif
       prec_A.initialize(system_matrix.block(0, 0), data);
     }
@@ -532,8 +613,8 @@ namespace AMGStokes
                                                     mp_inverse_t>
       preconditioner(prec_A, mp_inverse);
 
-    SolverControl solver_control(system_matrix.m(),
-                                1e-10 * system_rhs.l2_norm());
+    SolverControl solver_control(system_matrix.m(), 1e-12);
+                                // 1e-10 * system_rhs.l2_norm());
 
     SolverMinRes<LA::MPI::BlockVector> solver(solver_control);
 
@@ -541,14 +622,39 @@ namespace AMGStokes
                                               mpi_communicator);
 
     constraints.set_zero(distributed_solution);
+    LA::MPI::BlockVector residual(system_rhs);
+
+    system_matrix.vmult(residual, distributed_solution);
+    residual -= system_rhs;
+    double init_r_norm = residual.l2_norm();
+    // std::cout<<init_r_norm<<std::endl;
+
 
     solver.solve(system_matrix,
                 distributed_solution,
                 system_rhs,
                 preconditioner);
+    
+    system_matrix.vmult(residual, distributed_solution);
+    residual -= system_rhs;
+    double final_r_norm = residual.l2_norm();  
+    // std::cout<<final_r_norm<<std::endl;
 
-    pcout << "   Solved in " << solver_control.last_step() << " iterations."
-          << std::endl;
+    const unsigned int k = solver_control.last_step();
+    if (k < 1) 
+    {
+      std::cerr << "Warning: Insufficient residuals recorded (" 
+                << k << "). Returning rho=0." << std::endl;
+      return;
+    }
+
+    // ρ = (||r_k|| / ||r_0||)^{1/k}
+    const double rho = (k > 0) ? std::pow(final_r_norm / init_r_norm, 1.0 / k) : 0.0;
+    double h = triangulation.begin_active()->diameter(); // 网格尺寸
+    write_matrix_to_csv(system_matrix, file, rho, h);
+
+    // pcout << "   Solved in " << solver_control.last_step() << " iterations."
+    //       << std::endl;
 
     constraints.distribute(distributed_solution);
 
@@ -573,7 +679,7 @@ namespace AMGStokes
   }
 
 
-
+  /*
   template <int dim>
   void StokesProblem<dim>::output_results(const unsigned int cycle) const
   {
@@ -659,21 +765,85 @@ namespace AMGStokes
     data_out.write_vtu_with_pvtu_record(
       "./", "solution", cycle, mpi_communicator, 2);
   }
+  */
+
+  template <int dim>
+  void StokesProblem<dim>::write_matrix_to_csv(const LA::MPI::BlockSparseMatrix &matrix,
+    std::ofstream &file,
+    double rho,
+    double h)
+  {  
+    // 只访问 (0,0) 块（速度-速度子矩阵）
+    const auto &petsc_matrix= matrix.block(0,0);
+    
+    // 转换为 PETSc 矩阵
+    // const Mat petsc_matrix = A00.petsc_matrix();
+    
+    PetscInt m, n;
+    MatGetSize(petsc_matrix, &m, &n);
+    
+    PetscInt start, end;
+    MatGetOwnershipRange(petsc_matrix, &start, &end);
+    
+    std::vector<PetscInt> row_ptr;
+    std::vector<PetscInt> col_ind;
+    std::vector<PetscScalar> values;
+    
+    PetscInt idx = 0;
+    for (PetscInt i = start; i < end; i++) {
+        PetscInt ncols;
+        const PetscInt* cols;
+        const PetscScalar* vals;
+        
+        // 现在使用正确的 PETSc 矩阵对象
+        MatGetRow(petsc_matrix, i, &ncols, &cols, &vals);
+        
+        row_ptr.push_back(idx);
+        const double zero_tol = 1e-12;
+        
+        for (PetscInt j = 0; j < ncols; j++) {
+            if (std::abs(vals[j]) > zero_tol) {
+                col_ind.push_back(cols[j]);
+                values.push_back(vals[j]);
+                idx++;
+            }
+        }
+        MatRestoreRow(petsc_matrix, i, &ncols, &cols, &vals);
+    }
+    row_ptr.push_back(idx);
+  
+    // 写入 m(rows), n(cols), rho, h, nnz
+    file << m << "," << n << "," << theta << "," << rho << "," << h << "," << values.size();
+  
+    // 写入所有非零值
+    for (const auto &val : values)
+    file << "," << val;
+  
+    // 写入所有行索引
+    for (const auto &r : row_ptr)
+    file << "," << r;
+  
+    // 写入所有列索引
+    for (const auto &c : col_ind)
+    file << "," << c;
+  
+    file << "\n";
+  }
 
 
 
   template <int dim>
-  void StokesProblem<dim>::run()
+  void StokesProblem<dim>::run(std::ofstream &file)
   {
 #ifdef USE_PETSC_LA
-    pcout << "Running using PETSc." << std::endl;
+    // pcout << "Running using PETSc." << std::endl;
 #else
     pcout << "Running using Trilinos." << std::endl;
 #endif
-    const unsigned int n_cycles = 5;
+    const unsigned int n_cycles = 4;  // {2, 3, 4, 5} as the train dataset, {6} as the test dataset.
     for (unsigned int cycle = 0; cycle < n_cycles; ++cycle)
       {
-        pcout << "Cycle " << cycle << ':' << std::endl;
+        // pcout << "Cycle " << cycle << ':' << std::endl;
 
         if (cycle == 0)
           make_grid();
@@ -683,18 +853,58 @@ namespace AMGStokes
         setup_system();
 
         assemble_system();
-        solve();
+        solve(file);
 
-        if (Utilities::MPI::n_mpi_processes(mpi_communicator) <= 32)
-          {
-            TimerOutput::Scope t(computing_timer, "output");
-            output_results(cycle);
-          }
+        // if (Utilities::MPI::n_mpi_processes(mpi_communicator) <= 32)
+        //   {
+        //     TimerOutput::Scope t(computing_timer, "output");
+        //     output_results(cycle);
+        //   }
 
-        computing_timer.print_summary();
-        computing_timer.reset();
+        // computing_timer.print_summary();
+        // computing_timer.reset();
 
         pcout << std::endl;
       }
   }
+
+
+  void generate_dataset(std::ofstream &file)
+  {
+    
+    // samples (4800 = 1 × 2 × 12 × 50 × 4)  Stokes train dataset
+    const std::vector<unsigned int> boundary_choices = {0};
+
+    const std::vector<unsigned int> velocity_degrees = 
+    {2, 3};
+
+    const std::vector<double> viscosity_values = StokesProblem<2>::linspace(0.1, 6.1, 12); 
+    
+    const std::vector<double> theta_values = StokesProblem<2>::linspace(0.02, 0.9, 50); 
+    
+    unsigned int sample_index = 0;
+    
+    // 遍历所有参数组合
+    for (unsigned int boundary_choice: boundary_choices)
+    {
+      for (unsigned int velocity_degree: velocity_degrees)
+      {
+        for (double viscosity : viscosity_values) 
+        {         
+          for (double theta : theta_values) 
+          {
+            StokesProblem<2> solver(velocity_degree, viscosity, boundary_choice);
+            solver.set_theta(theta);
+            solver.run(file);
+            sample_index += 4;
+            
+            // if (sample_index % 100 == 0) {
+            std::cout << "Generated " << sample_index << "/4800 samples" << std::endl;
+            // }
+          }
+        }        
+      }
+    }           
+  }
+
 } // namespace AMGStokes
