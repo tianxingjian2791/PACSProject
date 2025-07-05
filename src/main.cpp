@@ -19,6 +19,7 @@ int main(int argc, char* argv[])
         if (std::strcmp(argv[1], "D") == 0)
         {
             using namespace AMGDiffusion;
+            std::cout << "Generating the dataset of Diffusion equations" << std::endl;
 
             std::ofstream file("./datasets/train/raw/train.csv");
             generate_dataset(file);
@@ -31,6 +32,7 @@ int main(int argc, char* argv[])
 
             std::ofstream file("./datasets/train/raw/train2.csv");
             generate_dataset(file);
+            
             // ElasticProblem<2> elastic_problem;
             // elastic_problem.run();
         }
@@ -40,10 +42,10 @@ int main(int argc, char* argv[])
             std::cout << "Generating the dataset of Stokes equations" << std::endl;
 
             std::ofstream file("./datasets/train/raw/train3.csv");
-            // generate_dataset(file);    
+            generate_dataset(file);    
 
-            StokesProblem<2> stokes_problem(2, 0.1, 0);
-            stokes_problem.run(file);
+            // StokesProblem<2> stokes_problem(2, 0.1, 0);
+            // stokes_problem.run(file);
         }
         else
         {
