@@ -281,7 +281,7 @@ namespace AMGDiffusion
     , refinement(refinement)
     , fe(1) // Q1 有限元
     , dof_handler(triangulation)
-    , solver_control(1000, 1e-10) // 最大迭代次数1000，容差1e-12
+    , solver_control(dof_handler.n_dofs(), 1e-10) // 最大迭代次数1000，容差1e-12
     , exact_solution(pattern)
     , right_hand_side(pattern)
     , diffusion_coefficient(pattern, epsilon)
