@@ -41,20 +41,42 @@ namespace AMGElastic
   class ElasticProblem
   {
   public:
-    ElasticProblem();
-    void run();
+    ElasticProblem(double lambda, double mu);
+    void run(std::ofstream &file);
+    void set_theta(double theta);
+
+    // 辅助函数：生成线性间隔数组
+    static std::vector<double> linspace(double start, double end, size_t num_points) 
+    {
+      std::vector<double> result;
+      if (num_points == 0) return result;
+      if (num_points == 1) {
+          result.push_back(start);
+          return result;
+      }
+      
+      double step = (end - start) / (num_points - 1);
+      for (size_t i = 0; i < num_points; i++) {
+          result.push_back(start + i * step);
+      }
+      return result;
+    }
 
   private:
     void         setup_system();
     void         assemble_system();
-    unsigned int solve();
+    unsigned int solve(std::ofstream &file);
     void         refine_grid();
     void         output_results(const unsigned int cycle) const;
+    void write_matrix_to_csv(const PETScWrappers::MPI::SparseMatrix &matrix, std::ofstream &file, double rho, double h);
 
     MPI_Comm mpi_communicator;
 
     const unsigned int n_mpi_processes;
     const unsigned int this_mpi_process;
+    double lambda_;
+    double mu_;
+    double theta;
 
     ConditionalOStream pcout;
 
@@ -116,10 +138,12 @@ namespace AMGElastic
 
 
   template <int dim>
-  ElasticProblem<dim>::ElasticProblem()
+  ElasticProblem<dim>::ElasticProblem(double lambda, double mu)
     : mpi_communicator(MPI_COMM_WORLD)
     , n_mpi_processes(Utilities::MPI::n_mpi_processes(mpi_communicator))
     , this_mpi_process(Utilities::MPI::this_mpi_process(mpi_communicator))
+    , lambda_(lambda)
+    , mu_(mu)
     , pcout(std::cout, (this_mpi_process == 0))
     , fe(FE_Q<dim>(1), dim)
     , dof_handler(triangulation)
@@ -184,7 +208,7 @@ namespace AMGElastic
     std::vector<double> lambda_values(n_q_points);
     std::vector<double> mu_values(n_q_points);
 
-    Functions::ConstantFunction<dim> lambda(1.), mu(1.);
+    Functions::ConstantFunction<dim> lambda(lambda_), mu(mu_);
 
     RightHandSide<dim>          right_hand_side;
     std::vector<Vector<double>> rhs_values(n_q_points, Vector<double>(dim));
@@ -265,23 +289,59 @@ namespace AMGElastic
   }
 
 
+  template <int dim>
+  void ElasticProblem<dim>::set_theta(double theta)
+  {
+    this->theta = theta;
+  }
 
 
   template <int dim>
-  unsigned int ElasticProblem<dim>::solve()
+  unsigned int ElasticProblem<dim>::solve(std::ofstream &file)
   {
     SolverControl solver_control(solution.size(), 1e-8 * system_rhs.l2_norm());
     PETScWrappers::SolverCG cg(solver_control);
 
-    PETScWrappers::PreconditionBlockJacobi preconditioner(system_matrix);
+    PETScWrappers::PreconditionBoomerAMG preconditioner;
+    PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
+    data.strong_threshold = theta; // 设置强阈值参数θ（可根据需要调整）
+    // std::cout<<"strong threshold: "<<data.strong_threshold<<std::endl;
+    data.symmetric_operator = true; // 对称算子
+
+    // 初始化AMG预条件子
+    preconditioner.initialize(system_matrix, data);
+
+    PETScWrappers::MPI::Vector residual(system_rhs);
+
+    // system_matrix.vmult(residual, solution);
+    // residual -= system_rhs;
+    double init_r_norm = residual.l2_norm();
+    std::cout<<init_r_norm<<" ";
 
     cg.solve(system_matrix, solution, system_rhs, preconditioner);
+
+    system_matrix.vmult(residual, solution);
+    residual -= system_rhs;
+    double final_r_norm = residual.l2_norm();  
+    std::cout<<final_r_norm<<std::endl;
 
     Vector<double> localized_solution(solution);
 
     hanging_node_constraints.distribute(localized_solution);
 
     solution = localized_solution;
+
+    const unsigned int k = solver_control.last_step();
+    if (k < 1) {
+      std::cerr << "Warning: Insufficient residuals recorded (" 
+                << k << "). Returning rho=0." << std::endl;
+      return 0;
+    }
+
+    // ρ = (||r_k|| / ||r_0||)^{1/k}
+    const double rho = (k > 0) ? std::pow(final_r_norm / init_r_norm, 1.0 / k) : 0.0;
+    double h = triangulation.begin_active()->diameter(); // 网格尺寸
+    write_matrix_to_csv(system_matrix, file, rho, h);
 
     return solver_control.last_step();
   }
@@ -374,13 +434,69 @@ namespace AMGElastic
   }
 
 
+  template <int dim>
+  void ElasticProblem<dim>::write_matrix_to_csv(const PETScWrappers::MPI::SparseMatrix &matrix,
+    std::ofstream &file,
+    double rho,
+    double h)
+  {  
+    const unsigned int m = matrix.m();
+    const unsigned int n = matrix.n();
+  
+    PetscInt start, end;
+    MatGetOwnershipRange(matrix, &start, &end);
+    
+    std::vector<PetscInt> row_ptr;
+    std::vector<PetscInt> col_ind;
+    std::vector<PetscScalar> values;
+    
+    PetscInt idx = 0;
+    for (PetscInt i = start; i < end; i++) {
+      PetscInt ncols;
+      const PetscInt* cols;
+      const PetscScalar* vals;
+      MatGetRow(matrix, i, &ncols, &cols, &vals);
+      
+      row_ptr.push_back(idx);
+      double zero_tol = 1e-12;
+      for (PetscInt j = 0; j < ncols; j++) {
+        // Filter the zeros explicitly
+        if (std::abs(vals[j]) > zero_tol){
+          col_ind.push_back(cols[j]);
+          values.push_back(vals[j]);
+          idx++;
+        }
+        
+      }
+      MatRestoreRow(matrix, i, &ncols, &cols, &vals);
+    }
+    row_ptr.push_back(idx);
+  
+    // 写入 m(rows), n(cols), rho, h, nnz
+    file << m << "," << n << "," << theta << "," << rho << "," << h << "," << values.size();
+  
+    // 写入所有非零值
+    for (const auto &val : values)
+    file << "," << val;
+  
+    // 写入所有行索引
+    for (const auto &r : row_ptr)
+    file << "," << r;
+  
+    // 写入所有列索引
+    for (const auto &c : col_ind)
+    file << "," << c;
+  
+    file << "\n";
+  }
+
 
   template <int dim>
-  void ElasticProblem<dim>::run()
+  void ElasticProblem<dim>::run(std::ofstream &file)
   {
-    for (unsigned int cycle = 0; cycle < 10; ++cycle)
+    for (unsigned int cycle = 0; cycle < 8; ++cycle)
       {
-        pcout << "Cycle " << cycle << ':' << std::endl;
+        // pcout << "Cycle " << cycle << ':' << std::endl;
 
         if (cycle == 0)
           {
@@ -390,71 +506,90 @@ namespace AMGElastic
         else
           refine_grid();
 
-        pcout << "   Number of active cells:       "
-              << triangulation.n_active_cells() << std::endl;
+        // pcout << "   Number of active cells:       "
+        //       << triangulation.n_active_cells() << std::endl;
 
         setup_system();
 
-        pcout << "   Number of degrees of freedom: " << dof_handler.n_dofs()
-              << " (by partition:";
-        for (unsigned int p = 0; p < n_mpi_processes; ++p)
-          pcout << (p == 0 ? ' ' : '+')
-                << (DoFTools::count_dofs_with_subdomain_association(dof_handler,
-                                                                    p));
-        pcout << ')' << std::endl;
+        // pcout << "   Number of degrees of freedom: " << dof_handler.n_dofs()
+        //       << " (by partition:";
+        // for (unsigned int p = 0; p < n_mpi_processes; ++p)
+        //   pcout << (p == 0 ? ' ' : '+')
+        //         << (DoFTools::count_dofs_with_subdomain_association(dof_handler,
+        //                                                             p));
+        // pcout << ')' << std::endl;
 
         assemble_system();
-        const unsigned int n_iterations = solve();
+        const unsigned int n_iterations = solve(file);
 
-        pcout << "   Solver converged in " << n_iterations << " iterations."
+        pcout << "Solver converged in " << n_iterations << " iterations."
               << std::endl;
 
-        output_results(cycle);
+        // output_results(cycle);
       }
   }
+
+
+  class MaterialProperties
+  {
+    public:
+      MaterialProperties(double E, double nu)
+        : E(E), nu(nu),
+          mu(E / (2.0 * (1.0 + nu))),
+          lambda((E * nu) / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+      {
+        Assert(mu > 0, ExcMessage("Shear modulus must be positive"));
+        Assert(nu > -1.0 && nu < 0.5, ExcMessage("Poisson ratio must be in (-1, 0.5)"));
+      }
+
+      double get_lambda() const { return lambda; }
+      double get_mu() const { return mu; }
+
+    private:
+      double E;
+      double nu;
+      double mu;
+      double lambda;
+  };
+
+  // 使用示例
+  // MaterialProperties steel(200e9, 0.3); // 钢
+  // MaterialProperties rubber(0.01e9, 0.499); // 橡胶
+
+  void generate_dataset(std::ofstream &file)
+  {
+    
+    // samples (4800 = 1 × 2 × 12 × 50 × 4)  Stokes train dataset
+    const std::vector<double> E_values = {2.5, 2.5e2, 2.5e4, 2.5e6};
+
+    const std::vector<double> nu_values = {0.25, 0.3, 0.35};
+    
+    const std::vector<double> theta_values = ElasticProblem<2>::linspace(0.02, 0.9, 50); 
+    
+    unsigned int sample_index = 0;
+    
+    // 遍历所有参数组合
+    for (double E: E_values)
+    {
+      for (double nu : nu_values)
+      {
+        MaterialProperties material(E, nu);
+
+        for (double theta : theta_values) 
+        {         
+          
+            ElasticProblem<2> solver(material.get_lambda(), material.get_mu());
+            solver.set_theta(theta);
+            solver.run(file);
+            sample_index += 8;
+            
+            // if (sample_index % 100 == 0) {
+            std::cout << "Generated " << sample_index << "/4800 samples" << std::endl;
+            // }
+          
+        }        
+      }
+    }           
+  }
+
 } // namespace AMGElastic
-
-
-/*
-int main(int argc, char **argv)
-{
-  try
-    {
-      using namespace dealii;
-      using namespace Step17;
-
-      Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
-
-      ElasticProblem<2> elastic_problem;
-      elastic_problem.run();
-    }
-  catch (std::exception &exc)
-    {
-      std::cerr << std::endl
-                << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
-      std::cerr << "Exception on processing: " << std::endl
-                << exc.what() << std::endl
-                << "Aborting!" << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
-
-      return 1;
-    }
-  catch (...)
-    {
-      std::cerr << std::endl
-                << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
-      std::cerr << "Unknown exception!" << std::endl
-                << "Aborting!" << std::endl
-                << "----------------------------------------------------"
-                << std::endl;
-      return 1;
-    }
-
-  return 0;
-}
-*/
