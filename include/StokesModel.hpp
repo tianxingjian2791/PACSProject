@@ -613,8 +613,7 @@ namespace AMGStokes
                                                     mp_inverse_t>
       preconditioner(prec_A, mp_inverse);
 
-    SolverControl solver_control(system_matrix.m(), 1e-12);
-                                // 1e-10 * system_rhs.l2_norm());
+    SolverControl solver_control(system_matrix.m(), 1e-10 * system_rhs.l2_norm());
 
     SolverMinRes<LA::MPI::BlockVector> solver(solver_control);
 
