@@ -28,9 +28,11 @@ int main(int argc, char* argv[])
         {
             using namespace AMGElastic;
             std::cout << "Generating the dataset of Elastic equations" << std::endl;
-            // generate_stokes_dataset();
-            ElasticProblem<2> elastic_problem;
-            elastic_problem.run();
+
+            std::ofstream file("./datasets/train/raw/train2.csv");
+            generate_dataset(file);
+            // ElasticProblem<2> elastic_problem;
+            // elastic_problem.run();
         }
         else if (std::strcmp(argv[1], "S") == 0)
         {
