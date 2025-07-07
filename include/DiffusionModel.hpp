@@ -34,7 +34,6 @@
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/data_out.h>
 
-#include <hdf5.h> // 添加HDF5支持
 #include <fstream>
 #include <iostream>
 #include <cmath>
