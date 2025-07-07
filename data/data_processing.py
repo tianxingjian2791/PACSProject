@@ -150,19 +150,21 @@ def merge_csv_files(input_paths,output_path):
     with open(output_path, mode='w') as wf:
         writer = csv.writer(wf)
         for path in input_paths:
-            rf = open(output_path, newline='')
+            rf = open(path, newline='')
             reader = csv.reader(rf)
             for row in reader:
                 writer.writerow(row)
 
             rf.close()
 
-        
-output_path = "train.csv"
-with open(output_path, mode="w") as f:
-    writer = csv.writer(f)
-    path_list = ["train1.csv", "train2.csv"]
-    for path in path_list:
-        reader = csv.reader(open(path, newline=''))
-        for row in reader:
-            writer.writerow(row)
+
+'''
+# This is for merging three train datasets
+path_list = ["./datasets/train/raw/train"+str(i+1)+".csv" for i in range(3)]
+merge_csv_files(path_list, "./datasets/train/raw/train.csv")
+'''
+
+# This is for merging three test datasets
+path_list = ["./datasets/test/raw/test"+str(i+1)+".csv" for i in range(3)]
+merge_csv_files(path_list, "./datasets/test/raw/test.csv")
+
