@@ -26,16 +26,5 @@ endif()
 
 deal_ii_initialize_cached_variables()
 
-# Find HDF5 (C and C++ interfaces)
-find_package(HDF5 REQUIRED COMPONENTS C CXX)
-if(HDF5_FOUND)
-  # Add HDF5 include directories
-  list(APPEND DEAL_II_EXTRA_INCLUDES ${HDF5_INCLUDE_DIRS})
-  # Add HDF5 libraries
-  list(APPEND DEAL_II_EXTRA_LIBRARIES HDF5::HDF5_C HDF5::HDF5_CXX)
-else()
-  message(FATAL_ERROR "HDF5 not found. Please install HDF5 and retry.")
-endif()
-
 # Autopilot generates targets and links with deal.II and extra libraries
 deal_ii_invoke_autopilot()
