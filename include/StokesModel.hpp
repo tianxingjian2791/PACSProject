@@ -243,6 +243,8 @@ namespace AMGStokes
 
     void run(std::ofstream &file);
     void set_theta(double theta);
+    void set_init_refinement(unsigned int refinement);
+    void set_n_cycle(unsigned int n_cycle);
 
 
     // 辅助函数：生成线性间隔数组
@@ -274,6 +276,8 @@ namespace AMGStokes
     unsigned int velocity_degree;
     double       viscosity;
     double       theta;
+    unsigned int init_refinement = 2;
+    unsigned int n_cycle = 4;
     unsigned int boundary_choice;
     MPI_Comm     mpi_communicator;
 
@@ -323,6 +327,18 @@ namespace AMGStokes
     this -> theta = theta;
   }
 
+  template <int dim>
+  void StokesProblem<dim>::set_init_refinement(unsigned int refinement)
+  {
+    this -> init_refinement = refinement;
+  }
+
+  template <int dim>
+  void StokesProblem<dim>::set_n_cycle(unsigned int n_cycle)
+  {
+    this -> n_cycle = n_cycle;
+  }
+
 
   template <int dim>
   void StokesProblem<dim>::make_grid()
@@ -346,7 +362,7 @@ namespace AMGStokes
             }
           }
     }
-    triangulation.refine_global(2);  // old = 3, new = 2. Consider the computing ability of my laptop.
+    triangulation.refine_global(init_refinement);  // old = 3, new = 2. Consider the computing ability of my laptop.
   }
 
   template <int dim>
@@ -839,7 +855,7 @@ namespace AMGStokes
 #else
     pcout << "Running using Trilinos." << std::endl;
 #endif
-    const unsigned int n_cycles = 4;  // {2, 3, 4, 5} as the train dataset, {6} as the test dataset.
+    const unsigned int n_cycles = n_cycle;  // {2, 3, 4, 5} as the train dataset, {6} as the test dataset.
     for (unsigned int cycle = 0; cycle < n_cycles; ++cycle)
       {
         // pcout << "Cycle " << cycle << ':' << std::endl;
@@ -868,7 +884,7 @@ namespace AMGStokes
   }
 
 
-  void generate_dataset(std::ofstream &file)
+  void generate_dataset(std::ofstream &file, std::string train_flag)
   {
     
     // samples (4800 = 1 × 2 × 12 × 50 × 4)  Stokes train dataset
@@ -894,12 +910,21 @@ namespace AMGStokes
           {
             StokesProblem<2> solver(velocity_degree, viscosity, boundary_choice);
             solver.set_theta(theta);
+            if (train_flag == "test")
+            {
+              solver.set_init_refinement(6);  // we use refiment = {6} as a test dataset
+              solver.set_n_cycle(1); 
+            }
             solver.run(file);
-            sample_index += 4;
+            if (train_flag == "test")
+              sample_index ++;
+            else
+              sample_index += 4;
             
-            // if (sample_index % 100 == 0) {
-            std::cout << "Generated " << sample_index << "/4800 samples" << std::endl;
-            // }
+            if (train_flag == "test") 
+              std::cout << "Generated " << sample_index << "/1200 samples" << std::endl;
+            else
+              std::cout << "Generated " << sample_index << "/4800 samples" << std::endl;
           }
         }        
       }
