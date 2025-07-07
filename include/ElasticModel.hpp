@@ -556,11 +556,16 @@ namespace AMGElastic
   // MaterialProperties steel(200e9, 0.3); // 钢
   // MaterialProperties rubber(0.01e9, 0.499); // 橡胶
 
-  void generate_dataset(std::ofstream &file)
+  void generate_dataset(std::ofstream &file, std::string train_flag)
   {
     
     // samples (4800 = 1 × 2 × 12 × 50 × 4)  Stokes train dataset
-    const std::vector<double> E_values = {2.5, 2.5e2, 2.5e4, 2.5e6};
+    std::vector<double> E_values;
+    std::cout<<"train flag: "<<train_flag<<std::endl;
+    if (train_flag == "train")
+      E_values = {2.5, 2.5e2, 2.5e4, 2.5e6};
+    else
+      E_values = {2.5e7};
 
     const std::vector<double> nu_values = {0.25, 0.3, 0.35};
     
