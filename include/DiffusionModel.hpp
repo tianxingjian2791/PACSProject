@@ -562,7 +562,7 @@ namespace AMGDiffusion
 
   }
 
-  void generate_dataset(std::ofstream &file)
+  void generate_dataset(std::ofstream &file, std::string train_flag)
   {
     // 参数范围 (9600个样本 = 4模式 × 12ε × 25θ × 8网格)
     const std::array<DiffusionPattern, 4> patterns = 
@@ -580,12 +580,13 @@ namespace AMGDiffusion
     const std::vector<double> theta_values = 
         // Solver<2>::linspace(0.02, 0.9, 45); // dataset2
         Solver<2>::linspace(0.02, 0.9, 25); // dataset1
-    
-    const std::vector<unsigned int> refinements = 
-        // {3, 4, 5, 6}; // dataset2
-        // {8};
-        // {7}; // dataset1: test
-        {3, 4, 5, 6}; // dataset1: train
+
+    std::vector<unsigned int> refinements;
+    if (train_flag == "train")
+      refinements = {3, 4, 5, 6}; // dataset: train
+    else
+      refinements = {7}; // dataset: test
+
     
     unsigned int sample_index = 0;
     
