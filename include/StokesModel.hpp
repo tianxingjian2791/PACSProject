@@ -192,45 +192,54 @@ namespace AMGStokes
   class ExactSolution : public Function<dim>
   {
   public:
-    ExactSolution()
+    ExactSolution(unsigned int bound_choice)
       : Function<dim>(dim + 1)
-    {}
+    {boundary_choice = bound_choice;}
 
     virtual void vector_value(const Point<dim> &p,
                               Vector<double> &  values) const override;
+  private:
+      unsigned int boundary_choice;
   };
 
   template <int dim>
   void ExactSolution<dim>::vector_value(const Point<dim> &p,
                                         Vector<double> &  values) const
   {
-    const double R_x = p[0];
-    const double R_y = p[1];
+    values[0] = 0;
+    values[1] = 0;
+    values[2] = 0;
 
-    constexpr double pi  = numbers::PI;
-    constexpr double pi2 = numbers::PI * numbers::PI;
-
-    values[0] = -std::exp(R_x * (-std::sqrt(25.0 + 4 * pi2) + 5.0)) *
-                  std::cos(2 * R_y * pi) +
-                1;
-    values[1] = (1.0L / 2.0L) * (-std::sqrt(25.0 + 4 * pi2) + 5.0) *
-                std::exp(R_x * (-std::sqrt(25.0 + 4 * pi2) + 5.0)) *
-                std::sin(2 * R_y * pi) / pi;
-    values[2] =
-      -1.0L / 2.0L * std::exp(R_x * (-2 * std::sqrt(25.0 + 4 * pi2) + 10.0)) -
-      2.0 *
-        (-6538034.74494422 +
-        0.0134758939981709 * std::exp(4 * std::sqrt(25.0 + 4 * pi2))) /
-        (-80.0 * std::exp(3 * std::sqrt(25.0 + 4 * pi2)) +
-        16.0 * std::sqrt(25.0 + 4 * pi2) *
-          std::exp(3 * std::sqrt(25.0 + 4 * pi2))) -
-      1634508.68623606 * std::exp(-3.0 * std::sqrt(25.0 + 4 * pi2)) /
-        (-10.0 + 2.0 * std::sqrt(25.0 + 4 * pi2)) +
-      (-0.00673794699908547 * std::exp(std::sqrt(25.0 + 4 * pi2)) +
-      3269017.37247211 * std::exp(-3 * std::sqrt(25.0 + 4 * pi2))) /
-        (-8 * std::sqrt(25.0 + 4 * pi2) + 40.0) +
-      0.00336897349954273 * std::exp(1.0 * std::sqrt(25.0 + 4 * pi2)) /
-        (-10.0 + 2.0 * std::sqrt(25.0 + 4 * pi2));
+    if (boundary_choice == 0)
+    {
+      const double R_x = p[0];
+      const double R_y = p[1];
+  
+      constexpr double pi  = numbers::PI;
+      constexpr double pi2 = numbers::PI * numbers::PI;
+  
+      values[0] = -std::exp(R_x * (-std::sqrt(25.0 + 4 * pi2) + 5.0)) *
+                    std::cos(2 * R_y * pi) +
+                  1;
+      values[1] = (1.0L / 2.0L) * (-std::sqrt(25.0 + 4 * pi2) + 5.0) *
+                  std::exp(R_x * (-std::sqrt(25.0 + 4 * pi2) + 5.0)) *
+                  std::sin(2 * R_y * pi) / pi;
+      values[2] =
+        -1.0L / 2.0L * std::exp(R_x * (-2 * std::sqrt(25.0 + 4 * pi2) + 10.0)) -
+        2.0 *
+          (-6538034.74494422 +
+          0.0134758939981709 * std::exp(4 * std::sqrt(25.0 + 4 * pi2))) /
+          (-80.0 * std::exp(3 * std::sqrt(25.0 + 4 * pi2)) +
+          16.0 * std::sqrt(25.0 + 4 * pi2) *
+            std::exp(3 * std::sqrt(25.0 + 4 * pi2))) -
+        1634508.68623606 * std::exp(-3.0 * std::sqrt(25.0 + 4 * pi2)) /
+          (-10.0 + 2.0 * std::sqrt(25.0 + 4 * pi2)) +
+        (-0.00673794699908547 * std::exp(std::sqrt(25.0 + 4 * pi2)) +
+        3269017.37247211 * std::exp(-3 * std::sqrt(25.0 + 4 * pi2))) /
+          (-8 * std::sqrt(25.0 + 4 * pi2) + 40.0) +
+        0.00336897349954273 * std::exp(1.0 * std::sqrt(25.0 + 4 * pi2)) /
+          (-10.0 + 2.0 * std::sqrt(25.0 + 4 * pi2));
+    }
   }
 
 
@@ -343,24 +352,29 @@ namespace AMGStokes
   template <int dim>
   void StokesProblem<dim>::make_grid()
   {
-    GridGenerator::hyper_cube(triangulation, -0.5, 1.5);
     if (boundary_choice == 0)
     {
-
+      GridGenerator::hyper_cube(triangulation, -0.5, 1.5);
     }
-    else
+    else // 顶盖驱动方腔流
     {
-            // 标记右边界为ID=1 (x=1.5)
+      // 创建标准方腔网格 [0,1]^dim
+      GridGenerator::hyper_cube(triangulation, 0, 1);
+      
+      // 标记顶盖边界(y=1)
       for (auto &cell : triangulation.active_cell_iterators()) {
         for (unsigned int f = 0; f < GeometryInfo<dim>::faces_per_cell; ++f) {
-            if (cell->face(f)->at_boundary()) {
-                const Point<dim> center = cell->face(f)->center();
-                if (center[0] > 1.4) { // x≈1.5 (考虑浮点误差)
-                    cell->face(f)->set_boundary_id(1);
-                }
-              }
+          if (cell->face(f)->at_boundary()) {
+            const Point<dim> center = cell->face(f)->center();
+            // 检测顶盖边界(y≈1)
+            if (std::abs(center[1] - 1.0) < 1e-5) {
+              cell->face(f)->set_boundary_id(1); // 顶盖边界
+            } else {
+              cell->face(f)->set_boundary_id(0); // 壁面边界
             }
           }
+        }
+      }
     }
     triangulation.refine_global(init_refinement);  // old = 3, new = 2. Consider the computing ability of my laptop.
   }
@@ -398,36 +412,41 @@ namespace AMGStokes
 
     {
       constraints.reinit(locally_relevant_dofs);
-
       const FEValuesExtractors::Vector velocities(0);
       DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-      if (boundary_choice == 0)
+      
+      if (boundary_choice == 0) // 原始问题
       {
         VectorTools::interpolate_boundary_values(dof_handler,
           0,
-          ExactSolution<dim>(),
+          ExactSolution<dim>(boundary_choice),
           constraints,
           fe.component_mask(velocities));
       }
-      else
+      else // 顶盖驱动方腔流
       {
-        // 在ID=1的边界施加常数边界条件
+        // 壁面边界(ID=0): 零速度
         VectorTools::interpolate_boundary_values(
           dof_handler,
-          1, // 现在ID=1的边界存在
-          Functions::ConstantFunction<dim>(1.0, dim+1),
+          0,
+          Functions::ZeroFunction<dim>(dim+1),
           constraints,
           fe.component_mask(velocities));
-
-        // 可选：在其他边界保持原始条件
+        
+        // 顶盖边界(ID=1): x方向速度为1，y方向速度为0
+        Vector<double> lid_velocity_values(dim+1);
+        for (auto &v: lid_velocity_values)
+          v = 0.0;
+        lid_velocity_values[0] = 1.0; // x-velocity = 1
+        Functions::ConstantFunction<dim> lid_velocity(lid_velocity_values);
+        
         VectorTools::interpolate_boundary_values(
           dof_handler,
-          0, // 默认边界ID=0
-          Functions::ZeroFunction<dim>(dim+1), // 改为零边界
+          1,
+          lid_velocity,
           constraints,
           fe.component_mask(velocities));
       }
-
       constraints.close();
     }
 
@@ -674,13 +693,16 @@ namespace AMGStokes
     constraints.distribute(distributed_solution);
 
     locally_relevant_solution = distributed_solution;
-    const double mean_pressure =
+    if (boundary_choice == 0)
+    {
+      const double mean_pressure =
       VectorTools::compute_mean_value(dof_handler,
                                       QGauss<dim>(velocity_degree + 2),
                                       locally_relevant_solution,
                                       dim);
-    distributed_solution.block(1).add(-mean_pressure);
-    locally_relevant_solution.block(1) = distributed_solution.block(1);
+      distributed_solution.block(1).add(-mean_pressure);
+      locally_relevant_solution.block(1) = distributed_solution.block(1);      
+    }
   }
 
 
@@ -888,7 +910,7 @@ namespace AMGStokes
   {
     
     // samples (4800 = 1 × 2 × 12 × 50 × 4)  Stokes train dataset
-    const std::vector<unsigned int> boundary_choices = {0};
+    const std::vector<unsigned int> boundary_choices = {1};
 
     const std::vector<unsigned int> velocity_degrees = 
     {2, 3};
