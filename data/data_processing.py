@@ -128,10 +128,10 @@ def create_data_loaders(data_dir, batch_size=32):
         train_loader, test_loader
     """
     # 创建数据集
-    train_dataset = SparseMatrixDataset(
-        root=os.path.join(data_dir, 'train'),
-        csv_file='train.csv'
-    )
+    # train_dataset = SparseMatrixDataset(
+    #     root=os.path.join(data_dir, 'train'),
+    #     csv_file='train.csv'
+    # )
     
     test_dataset = SparseMatrixDataset(
         root=os.path.join(data_dir, 'test'),
@@ -139,11 +139,11 @@ def create_data_loaders(data_dir, batch_size=32):
     )
     
     # 创建数据加载器
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    # train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     
-    return train_loader, test_loader
-    # return train_loader
+    # return train_loader, test_loader
+    return test_loader
 
 
 def merge_csv_files(input_paths,output_path):
@@ -157,14 +157,51 @@ def merge_csv_files(input_paths,output_path):
 
             rf.close()
 
+def merge_csv_files2(input_paths,output_path, row_filter):
+    with open(output_path, mode='w') as wf:
+        writer = csv.writer(wf)
+        for path in input_paths:
+            rf = open(path, newline='')
+            reader = csv.reader(rf)
+            row_num = 0
+            for row in reader:
+                row_num += 1
+                if row_num % 4 in row_filter:
+                    writer.writerow(row)
 
-'''
+            rf.close()
+
+def merge_csv_files3(input_paths,output_path, row_filter):
+    with open(output_path, mode='w') as wf:
+        writer = csv.writer(wf)
+        for path in input_paths:
+            rf = open(path, newline='')
+            reader = csv.reader(rf)
+            row_num = 0
+            total_rows = 0
+            for row in reader:
+                row_num += 1
+                if row_num % 8 in row_filter and total_rows < 600:
+                    total_rows += 1
+                    writer.writerow(row)
+
+            rf.close()
+
+
 # This is for merging three train datasets
-path_list = ["./datasets/train/raw/train"+str(i+1)+".csv" for i in range(3)]
-merge_csv_files(path_list, "./datasets/train/raw/train.csv")
-'''
+# path_list = ["./datasets/train/raw/train"+str(i+1)+".csv" for i in range(3)]
+# merge_csv_files(path_list, "./datasets/train/raw/train.csv")
+
+
+# path_list = ["./datasets/test/raw/test3.csv", "./datasets/train/raw/train3_1.csv"]
+# row_list = [1, 2]
+# print(1 in row_list)
+# merge_csv_files2(path_list, "./datasets/train/raw/train3.csv", row_list)
+# path_list = ["./datasets/train/raw/train3_1.csv", "./datasets/train/raw/train3_2.csv"]
+# row_list = [3]
+# print(1 in row_list)
+# merge_csv_files3(path_list, "./datasets/test/raw/test3.csv", row_list)
 
 # This is for merging three test datasets
-path_list = ["./datasets/test/raw/test"+str(i+1)+".csv" for i in range(3)]
-merge_csv_files(path_list, "./datasets/test/raw/test.csv")
-
+# path_list = ["./datasets/test/raw/test"+str(i+1)+".csv" for i in range(3)]
+# merge_csv_files(path_list, "./datasets/test/raw/test.csv")
