@@ -22,12 +22,28 @@ int main(int argc, char* argv[])
             using namespace AMGDiffusion;
             std::cout << "Generating the dataset of Diffusion equations" << std::endl;
 
-            std::ofstream file("./datasets/test/raw/test1.csv");
+            std::ofstream file;
             if (std::string(argv[2]) == "train")
             {
-                std::ofstream file("./datasets/train/raw/train1.csv");
+                file.open("./datasets/train/raw/train1.csv", std::ios::out | std::ios::trunc);
+                if (!file.is_open()) 
+                {
+                    std::cerr << "Failed to open file\n";
+                    return -1;
+                }
             }
+            else
+            {
+                file.open("./datasets/test/raw/test1.csv", std::ios::out | std::ios::trunc);
+                if (!file.is_open()) 
+                {
+                    std::cerr << "Failed to open file\n";
+                    return -1;
+                }
+            }
+                
             generate_dataset(file, std::string(argv[2]));
+            file.close();
             
         }
         else if (std::strcmp(argv[1], "E") == 0)
@@ -35,12 +51,28 @@ int main(int argc, char* argv[])
             using namespace AMGElastic;
             std::cout << "Generating the dataset of Elastic equations" << std::endl;
 
-            std::ofstream file("./datasets/test/raw/test2.csv");
+            std::ofstream file;
             if (std::string(argv[2]) == "train")
             {
-                std::ofstream file("./datasets/train/raw/train2.csv");
+                file.open("./datasets/train/raw/train2.csv", std::ios::out | std::ios::trunc);
+                if (!file.is_open()) 
+                {
+                    std::cerr << "Failed to open file\n";
+                    return -1;
+                }
             }
+            else
+            {
+                file.open("./datasets/test/raw/test2.csv", std::ios::out | std::ios::trunc);
+                if (!file.is_open()) 
+                {
+                    std::cerr << "Failed to open file\n";
+                    return -1;
+                }
+            }
+                
             generate_dataset(file, std::string(argv[2]));
+            file.close();
             
             // ElasticProblem<2> elastic_problem;
             // elastic_problem.run();
@@ -50,12 +82,29 @@ int main(int argc, char* argv[])
             using namespace AMGStokes;
             std::cout << "Generating the dataset of Stokes equations" << std::endl;
 
-            std::ofstream file("./datasets/test/raw/test3.csv");
+            // std::ofstream file("./datasets/test/raw/test3.csv");
+            std::ofstream file;
             if (std::string(argv[2]) == "train")
             {
-                std::ofstream file("./datasets/train/raw/train3.csv");
+                file.open("./datasets/train/raw/train3.csv", std::ios::out | std::ios::trunc);
+                if (!file.is_open()) 
+                {
+                    std::cerr << "Failed to open file\n";
+                    return -1;
+                }
             }
-            generate_dataset(file, std::string(argv[2]));  
+            else
+            {
+                file.open("./datasets/test/raw/test3.csv", std::ios::out | std::ios::trunc);
+                if (!file.is_open()) 
+                {
+                    std::cerr << "Failed to open file\n";
+                    return -1;
+                }
+            }
+                
+            generate_dataset(file, std::string(argv[2]));
+            file.close(); 
 
             // StokesProblem<2> stokes_problem(2, 0.1, 0);
             // stokes_problem.run(file);
