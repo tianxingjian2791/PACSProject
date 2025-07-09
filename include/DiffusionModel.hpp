@@ -280,7 +280,7 @@ namespace AMGDiffusion
     , refinement(refinement)
     , fe(1) // Q1 有限元
     , dof_handler(triangulation)
-    , solver_control(dof_handler.n_dofs(), 1e-10) // 最大迭代次数1000，容差1e-12
+    , solver_control(1000, 1e-12) // 最大迭代次数1000，容差1e-12
     , exact_solution(pattern)
     , right_hand_side(pattern)
     , diffusion_coefficient(pattern, epsilon)
@@ -317,7 +317,7 @@ namespace AMGDiffusion
   template <int dim>
   void Solver<dim>::set_refinement(unsigned int refinement)
   {
-    refinement = refinement;
+    this->refinement = refinement;
   }
 
   template <int dim>
@@ -572,19 +572,23 @@ namespace AMGDiffusion
       DiffusionPattern::checkerboard
     }};
   
-    const std::vector<double> epsilon_values = 
-        // Solver<2>::linspace(0.0, 9.5, 40); // dataset2
-        Solver<2>::linspace(0.0, 9.5, 12); // dataset1
+    std::vector<double> epsilon_values;
+    if (train_flag == "train") 
+      // Solver<2>::linspace(0.0, 9.5, 40); // dataset2
+      epsilon_values = Solver<2>::linspace(0.0, 9.5, 12); // dataset1
+    else
+      epsilon_values = {1.0, 2.0, 3.0};
     
     const std::vector<double> theta_values = 
         // Solver<2>::linspace(0.02, 0.9, 45); // dataset2
         Solver<2>::linspace(0.02, 0.9, 25); // dataset1
 
-    std::vector<unsigned int> refinements;
-    if (train_flag == "train")
-      refinements = {3, 4, 5, 6}; // dataset: train
-    else
-      refinements = {7}; // dataset: test
+    std::vector<unsigned int> refinements = {3, 4, 5, 6};
+
+    // if (train_flag == "train")
+    //   refinements = {3, 4, 5, 6}; // dataset: train
+    // else
+    //   refinements = {7}; // dataset: test
 
     
     unsigned int sample_index = 0;
