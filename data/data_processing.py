@@ -28,7 +28,7 @@ class SparseMatrixDataset(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        return ['data.pt']
+        return [self.csv_file[0:-4] +'.pt']
 
     def download(self):
         # 如果数据不在raw_dir中，这里可以添加下载代码
@@ -39,11 +39,12 @@ class SparseMatrixDataset(InMemoryDataset):
         raw_path = os.path.join(self.raw_dir, self.csv_file)
         with open(raw_path, newline='') as f:
             reader = csv.reader(f)
+            
             row_cnt = 0
             for row in reader:
                 row_cnt += 1
                 if row_cnt % 100 == 0:
-                    print(f"processed {row_cnt}/28800 samples")
+                    print(f"processed {row_cnt} samples")
                 
                 # 前 6 列：num_rows, num_cols, rho, theta, h, nnz
                 num_rows = int(row[0])
@@ -116,7 +117,7 @@ class SparseMatrixDataset(InMemoryDataset):
         torch.save((data, slices), self.processed_paths[0])
 
 
-def create_data_loaders(data_dir, batch_size=32):
+def create_data_loaders(data_dir, train_file, test_file, batch_size=32):
     """
     创建训练和测试数据加载器
     
@@ -128,22 +129,22 @@ def create_data_loaders(data_dir, batch_size=32):
         train_loader, test_loader
     """
     # 创建数据集
-    # train_dataset = SparseMatrixDataset(
-    #     root=os.path.join(data_dir, 'train'),
-    #     csv_file='train.csv'
-    # )
+    train_dataset = SparseMatrixDataset(
+        root=os.path.join(data_dir, 'train'),
+        csv_file=train_file
+    )
     
     test_dataset = SparseMatrixDataset(
         root=os.path.join(data_dir, 'test'),
-        csv_file='test.csv'
+        csv_file=test_file
     )
     
     # 创建数据加载器
-    # train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     
-    # return train_loader, test_loader
-    return test_loader
+    return train_loader, test_loader
+    # return train_loader
 
 
 def merge_csv_files(input_paths,output_path):
