@@ -69,10 +69,12 @@ def train_model(train_file, test_file, save_model_path, batch_size=8, in_chans=1
                 f'Train Loss: {train_loss:.6f}, '
                 f'Test Loss: {test_loss:.6f}, '
                 f'LR: {optimizer.param_groups[0]["lr"]:.6f}')
+            
+            if epoch % 5 == 0:
+                torch.save(model.state_dict(), 'weights/'+save_model_path[:-4]+f"_epoch{epoch}"+".pth")
         log_f.close()
         
-    torch.save(model.state_dict(), save_model_path)
-    print(f"模型已保存为 {save_model_path}")
+    print("Model training is finished!")
 
 
 if __name__ == "__main__":
@@ -83,12 +85,12 @@ if __name__ == "__main__":
     # train_model("train1.csv", "test1.csv", 'gat_amg_model1.pth')
 
     # train dataset2
-    train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth')
+    # train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth')
 
     # train dataset3
-    # train_model("train3.csv", "test3.csv", 'gat_amg_model3.pth')
+    train_model("train3.csv", "test3.csv", 'gat_amg_model3.pth')
 
-# 测试单个样本
+# Test one single sample
 """
 if len(test_loader.dataset) > 0:
     sample = test_loader.dataset[0].to(device)
