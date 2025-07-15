@@ -1,4 +1,5 @@
 import torch
+from tqdm import tqdm
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GATConv, global_mean_pool
@@ -88,10 +89,14 @@ def train(model, loader, optimizer, device):
     返回:
         平均损失
     """
+    # 创建进度条
+    progress_bar = tqdm(total=600, desc="Iterations:")    
+
     model.train()
     total_loss = 0
     
     for data in loader:
+        progress_bar.update(1)
         # data = data.to(device)
         optimizer.zero_grad()
         
@@ -106,6 +111,8 @@ def train(model, loader, optimizer, device):
         optimizer.step()
         
         total_loss += loss.item() * data.num_graphs
+    
+    progress_bar.close()
     
     return total_loss / len(loader.dataset)
 

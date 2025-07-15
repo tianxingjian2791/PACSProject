@@ -21,8 +21,8 @@ def train_model(train_file, test_file, save_model_path, batch_size=8, in_chans=1
 
     # 创建数据加载器
     data_dir = 'datasets'
-    train_loader, test_loader = create_data_loaders(data_dir, train_file, test_file, batch_size)
-
+    train_loader, test_loader = create_data_loaders(data_dir, train_file, test_file, batch_size, 0)
+    
     # 初始化模型
     in_channels = in_chans  # 节点特征维度 (度)
     hidden_channels = hidden_chans
@@ -85,10 +85,10 @@ if __name__ == "__main__":
     # train_model("train1.csv", "test1.csv", 'gat_amg_model1.pth')
 
     # train dataset2
-    # train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth')
+    train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth')
 
     # train dataset3
-    train_model("train3.csv", "test3.csv", 'gat_amg_model3.pth')
+    # train_model("train3.csv", "test3.csv", 'gat_amg_model3.pth')
 
 # Test one single sample
 """
