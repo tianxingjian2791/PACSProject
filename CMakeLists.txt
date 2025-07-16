@@ -16,6 +16,15 @@ find_package(deal.II 9.5.0
   COMPONENTS PETSc
   HINTS ${deal.II_DIR} ${DEAL_II_DIR} ../dealii-install $ENV{DEAL_II_DIR}
 )
+
+find_package(OpenMP REQUIRED)
+if(OpenMP_FOUND)
+    message(STATUS "Found OpenMP: ${OpenMP_CXX_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
+
+
+
 if(NOT deal.II_FOUND)
   message(FATAL_ERROR "\n"
     "*** Could not locate a (sufficiently recent) version of deal.II. ***\n\n"
