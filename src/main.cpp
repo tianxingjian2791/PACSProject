@@ -1,9 +1,67 @@
 #include "DiffusionModel.hpp"
 #include "StokesModel.hpp"
 #include "ElasticModel.hpp"
+#include "Pooling.hpp"
+#include <fstream>
 
 int main(int argc, char* argv[])
 {
+    // 示例：5×5矩阵 (COO格式)
+    // std::vector<double> val = {1.0, 2.0, 3.0, 4.0, 5.0};
+    // std::vector<int> row = {0, 1, 2, 3, 4};
+    // std::vector<int> col = {0, 1, 2, 3, 4};
+    // int n = 5;  // 原始矩阵尺寸
+    int m = 50;  // 池化后尺寸
+
+    std::string input_file_name = "./datasets/train/raw/train1.csv";
+    std::string out_file_name = "./datasets/train/raw/train1_cnn.csv";
+
+    std::ifstream input_file(input_file_name);
+    if (!input_file.is_open()) 
+    {
+        std::cerr << "Failed to open file\n";
+        return -1;
+    }
+
+    std::ofstream out_file;
+    out_file.open(out_file_name, std::ios::out | std::ios::trunc);
+    if (!out_file.is_open()) 
+    {
+        std::cerr << "Failed to open file\n";
+        return -1;
+    }
+
+    // std::vector<std::vector<double>> V;
+    // std::vector<std::vector<int>> C;
+
+    try {
+        // 执行并行池化（SUM操作）
+        // parallel_pooling(val, row, col, n, m, PoolingOp::SUM, V, C);
+        
+        // 输出结果
+        // std::cout << "Pooled Matrix (V):" << std::endl;
+        // for (const auto& vec : V) {
+        //     for (double d : vec) {
+        //         std::cout << d << " ";
+        //     }
+        //     std::cout << std::endl;
+        // }
+        
+        // std::cout << "\nCount Matrix (C):" << std::endl;
+        // for (const auto& vec : C) {
+        //     for (int i : vec) {
+        //         std::cout << i << " ";
+        //     }
+        //     std::cout << std::endl;
+        // }
+
+        pool_dataset(input_file, out_file, m, PoolingOp::SUM);
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+    }
+
+    /*
     try
     {
         using namespace dealii;
@@ -137,6 +195,7 @@ int main(int argc, char* argv[])
                 << "----------------------------------------------------" << std::endl;
     return 1;
     }
+    */
 
     return 0;
 }
