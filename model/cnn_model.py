@@ -1,30 +1,31 @@
 import torch
 import torch.nn as nn
+from tqdm import tqdm
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv, global_mean_pool
 
 class CNNModel(nn.Module):
     def __init__(self, in_channels, matrix_size=50, hidden_channels=32, out_channels=32, kernel_size=3, dropout=0.25):
         """
-        GAT模型初始化
+        CNN model initialization
         
-        参数:
-            in_channels: 输入特征维度
-            hidden_channels: 隐藏层维度
-            out_channels: 输出维度 (rho)
-            num_heads: 注意力头数
-            dropout: Dropout率
+        Parameters:
+            in_channels: the number of input channels
+            matrix_size: the order of input matrix
+            hidden_channels: the number of hidden channels
+            out_channels: the number of output channels
+            kernel_size: the size of the filter kernel
+            dropout: dropout rate
         """
         super(CNNModel, self).__init__()
         
-        # GAT层
+        # convolution layers
         self.conv1 = nn.Conv2d(
             in_channels, 
             hidden_channels,
             kernel_size, 
             padding= 'same')
         
-        self.conv2 = GATConv(
+        self.conv2 = nn.Conv2d(
             hidden_channels,
             out_channels,
             kernel_size)
@@ -40,9 +41,9 @@ class CNNModel(nn.Module):
         self.flatten = nn.Flatten()
 
         
-        # 全连接层
+        # fully connected layers
         flattened_size = 128
-        self.fc1 = nn.Linear(flattened_size + 2, hidden_channels*2)  # +2 用于theta和log_h
+        self.fc1 = nn.Linear(flattened_size + 2, hidden_channels*2)  # +2 is used for theta and log_h
         self.fc2 = nn.Linear(hidden_channels*2, 1)
         
         self.dropout = dropout
@@ -51,15 +52,16 @@ class CNNModel(nn.Module):
 
     def forward(self, data):
         """
-        前向传播
+        Forward propagation
         
-        参数:
-            data: 包含图数据的批处理对象
+        Parameter:
+            data: one batch of data
             
-        返回:
-            rho预测值
+        Return:
+            rho: predicted
         """
-        x, theta, log_h = data[:, 0:self.matrix_size], data[:, -2:-1], data[:, -1:]
+        x, theta, log_h = data[:, 2:], data[:, 0:1], data[:, 1:2]
+        x = x.view(x.shape[0], 1, self.matrix_size, self.matrix_size)
 
         # CNN
         x = self.conv1(x)
@@ -82,3 +84,65 @@ class CNNModel(nn.Module):
         
         return x.squeeze(-1)
 
+def train(model, loader, optimizer, device):
+    """
+    训练模型
+    
+    参数:
+        model: GAT模型
+        loader: 数据加载器
+        optimizer: 优化器
+        device: 计算设备
+        
+    返回:
+        平均损失
+    """
+    # 创建进度条
+    progress_bar = tqdm(total=600, desc="Iterations:")    
+
+    model.train()
+    total_loss = 0
+    
+    for data in loader:
+        progress_bar.update(1)
+        # data = data.to(device)
+        optimizer.zero_grad()
+        
+        # 前向传播
+        out = model(data[0])
+        
+        # 计算损失
+        loss = F.mse_loss(out, data[1])
+        
+        # 反向传播
+        loss.backward()
+        optimizer.step()
+        
+        total_loss += loss.item() * len(data[0])
+    
+    progress_bar.close()
+    
+    return total_loss / len(loader.dataset)
+
+def test(model, loader, device):
+    """
+    测试模型
+    
+    参数:
+        model: GAT模型
+        loader: 数据加载器
+        device: 计算设备
+        
+    返回:
+        平均损失
+    """
+    model.eval()
+    total_loss = 0
+    
+    with torch.no_grad():
+        for data in loader:
+            out = model(data[0].to(device))
+            loss = F.mse_loss(out, data[1].to(device))
+            total_loss += loss.item() * len(data[0])
+    
+    return total_loss / len(loader.dataset)
