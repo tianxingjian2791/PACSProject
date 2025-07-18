@@ -4,9 +4,9 @@ from torch.utils.data import Dataset, DataLoader
 
 class CSVDataset(Dataset):
     def __init__(self, csv_file, transform=None):
-        # 读取 CSV，没有 header
+        # read csv file
         data = pd.read_csv(csv_file, header=None)
-        # 第一列为标签，后面列为特征
+        # The first column represent labels and the remaining columns are features
         self.labels = data.iloc[:, 0].values.astype(float)
         self.features = data.iloc[:, 1:].values.astype(float)
         self.transform = transform
@@ -39,7 +39,6 @@ if __name__ == "__main__":
     test_csv_file = "datasets/test/raw/test1_cnn.csv"
     train_loader, test_loader = create_dataloaders(train_csv_file, test_csv_file, batch_size=8)
 
-    # 演示批次输出
     for batch_idx, (inputs, targets) in enumerate(train_loader):
         print(f"Batch {batch_idx}: inputs={inputs.shape}, targets={targets.shape}")
         if batch_idx == 0:

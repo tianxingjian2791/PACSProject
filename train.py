@@ -43,14 +43,14 @@ def train_model(train_file, test_file, save_model_path, model_type, batch_size=8
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # setup the learning rate sheduler
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)  # simple lr decay
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)  # simple lr decay
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
 
-    # 训练参数
+    # Epochs
     num_epochs = n_epochs
 
-    # 训练循环
+    # Begin the training
     train_loss_list = []
     test_loss_list = []
     with open("train_cnn_log.txt", mode='+a') as log_f:
@@ -68,7 +68,7 @@ def train_model(train_file, test_file, save_model_path, model_type, batch_size=8
                 test_loss = gat_model.test(model, test_loader, device)
             log_f.write(str(test_loss)+";")
             log_f.write("\n")
-            # scheduler.step(test_loss)
+            scheduler.step()
 
             train_loss_list.append(train_loss)
             test_loss_list.append(test_loss)
@@ -88,19 +88,19 @@ def train_model(train_file, test_file, save_model_path, model_type, batch_size=8
 if __name__ == "__main__":
     # train all the datasets
     # train_model("train.csv", "test.csv", 'gat_amg_model.pth')
-    # train_model("datasets/train/raw/train_cnn.csv", "datasets/test/raw/test_cnn.csv", "CNN")
+    train_model("datasets/train/raw/train_cnn.csv", "datasets/test/raw/test_cnn.csv", "cnn_amg_model.pth", "CNN")
 
     # train dataset1
     # train_model("train1.csv", "test1.csv", 'gat_amg_model1.pth')
-    train_model("datasets/train/raw/train1_cnn.csv", "datasets/test/raw/test1_cnn.csv", "cnn_amg_model1.pth", "CNN")
+    # train_model("datasets/train/raw/train1_cnn.csv", "datasets/test/raw/test1_cnn.csv", "cnn_amg_model1.pth", "CNN")
 
     # train dataset2
     # train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth', "GAT")
-    train_model("datasets/train/raw/train2_cnn.csv", "datasets/test/raw/test2_cnn.csv", "cnn_amg_model2.pth", "CNN")
+    # train_model("datasets/train/raw/train2_cnn.csv", "datasets/test/raw/test2_cnn.csv", "cnn_amg_model2.pth", "CNN")
 
     # train dataset3
     # train_model("train3.csv", "test3.csv", 'gat_amg_model3.pth')
-    train_model("datasets/train/raw/train3_cnn.csv", "datasets/test/raw/test3_cnn.csv", "cnn_amg_model3.pth", "CNN")
+    # train_model("datasets/train/raw/train3_cnn.csv", "datasets/test/raw/test3_cnn.csv", "cnn_amg_model3.pth", "CNN")
 
 # Test one single sample
 """
@@ -109,7 +109,7 @@ if len(test_loader.dataset) > 0:
     model.eval()
     with torch.no_grad():
         prediction = model(sample)
-        print(f"\n样本预测结果:")
-        print(f"真实 rho: {sample.y.item():.4f}")
-        print(f"预测 rho: {prediction.item():.4f}")
+        print(f"\nThe predictive result of the sample:")
+        print(f"real rho: {sample.y.item():.4f}")
+        print(f"predicted rho: {prediction.item():.4f}")
 """

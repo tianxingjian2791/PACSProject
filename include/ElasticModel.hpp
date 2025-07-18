@@ -1,3 +1,15 @@
+/* ---------------------------------------------------------------------
+ *
+ * This code origins from the step 17 tutorial program of the library deal.II
+ * I modify some code of the program in order to generate the dataset
+ * ---------------------------------------------------------------------
+ 
+ *
+ * Original Author: Wolfgang Bangerth, University of Texas at Austin, 2000, 2004
+ *         Wolfgang Bangerth, Texas A&M University, 2016
+ */
+
+ 
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/function.h>
 #include <deal.II/base/logstream.h>
@@ -45,7 +57,6 @@ namespace AMGElastic
     void run(std::ofstream &file);
     void set_theta(double theta);
 
-    // 辅助函数：生成线性间隔数组
     static std::vector<double> linspace(double start, double end, size_t num_points) 
     {
       std::vector<double> result;
@@ -304,11 +315,11 @@ namespace AMGElastic
 
     PETScWrappers::PreconditionBoomerAMG preconditioner;
     PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
-    data.strong_threshold = theta; // 设置强阈值参数θ（可根据需要调整）
+    data.strong_threshold = theta; // setup θ
     // std::cout<<"strong threshold: "<<data.strong_threshold<<std::endl;
-    data.symmetric_operator = true; // 对称算子
+    data.symmetric_operator = true;
 
-    // 初始化AMG预条件子
+    // Initialize AMG preconditioner
     preconditioner.initialize(system_matrix, data);
 
     PETScWrappers::MPI::Vector residual(system_rhs);
@@ -340,7 +351,7 @@ namespace AMGElastic
 
     // ρ = (||r_k|| / ||r_0||)^{1/k}
     const double rho = (k > 0) ? std::pow(final_r_norm / init_r_norm, 1.0 / k) : 0.0;
-    double h = triangulation.begin_active()->diameter(); // 网格尺寸
+    double h = triangulation.begin_active()->diameter(); // The step of grids
     write_matrix_to_csv(system_matrix, file, rho, h);
 
     return solver_control.last_step();
@@ -472,18 +483,18 @@ namespace AMGElastic
     }
     row_ptr.push_back(idx);
   
-    // 写入 m(rows), n(cols), rho, h, nnz
+    // write m(rows), n(cols), rho, h, nnz
     file << m << "," << n << "," << theta << "," << rho << "," << h << "," << values.size();
   
-    // 写入所有非零值
+    // write non-zero values
     for (const auto &val : values)
     file << "," << val;
   
-    // 写入所有行索引
+    // write row ptrs
     for (const auto &r : row_ptr)
     file << "," << r;
   
-    // 写入所有列索引
+    // write col indices
     for (const auto &c : col_ind)
     file << "," << c;
   
@@ -573,7 +584,7 @@ namespace AMGElastic
     
     unsigned int sample_index = 0;
     
-    // 遍历所有参数组合
+    // Traverse
     for (double E: E_values)
     {
       for (double nu : nu_values)

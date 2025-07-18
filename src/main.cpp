@@ -13,8 +13,8 @@ int main(int argc, char* argv[])
     // int n = 5;  // 原始矩阵尺寸
     int m = 50;  // 池化后尺寸
 
-    std::string input_file_name = "./datasets/train/raw/train1.csv";
-    std::string out_file_name = "./datasets/train/raw/train1_cnn.csv";
+    std::string input_file_name = "./datasets/train/raw/train.csv";
+    std::string out_file_name = "./datasets/train/raw/train_cnn.csv";
 
     std::ifstream input_file(input_file_name);
     if (!input_file.is_open()) 
@@ -35,26 +35,6 @@ int main(int argc, char* argv[])
     // std::vector<std::vector<int>> C;
 
     try {
-        // 执行并行池化（SUM操作）
-        // parallel_pooling(val, row, col, n, m, PoolingOp::SUM, V, C);
-        
-        // 输出结果
-        // std::cout << "Pooled Matrix (V):" << std::endl;
-        // for (const auto& vec : V) {
-        //     for (double d : vec) {
-        //         std::cout << d << " ";
-        //     }
-        //     std::cout << std::endl;
-        // }
-        
-        // std::cout << "\nCount Matrix (C):" << std::endl;
-        // for (const auto& vec : C) {
-        //     for (int i : vec) {
-        //         std::cout << i << " ";
-        //     }
-        //     std::cout << std::endl;
-        // }
-
         pool_dataset(input_file, out_file, m, PoolingOp::SUM);
 
     } catch (const std::exception& e) {
@@ -62,11 +42,12 @@ int main(int argc, char* argv[])
     }
 
     /*
+    // This part is used to generate different datasets, which is very important to train the neural networks
     try
     {
         using namespace dealii;
 
-        // 初始化 MPI（在串行模式下也可以安全调用）
+        // Initialize MPI
         Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
         
         if (argc < 3){

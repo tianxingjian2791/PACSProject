@@ -13,7 +13,7 @@ enum class PoolingOp {
     MAX
 };
 
-// 并行池化函数
+// Parallel pooling function
 void parallel_pooling_coo(const std::vector<double>& val,
                       const std::vector<int>& row,
                       const std::vector<int>& col,
@@ -21,7 +21,7 @@ void parallel_pooling_coo(const std::vector<double>& val,
                       std::vector<std::vector<double>>& V,
                       std::vector<std::vector<int>>& C) {
     
-    // 检查输入一致性
+    // Check input consistency
     if (val.size() != row.size() || val.size() != col.size()) {
         std::invalid_argument("val, row, col must have same size");
     }
@@ -33,21 +33,21 @@ void parallel_pooling_coo(const std::vector<double>& val,
         return;
     }
     
-    // 计算块划分参数
-    const int q = n / m;          // 基础块大小
-    const int p = n % m;          // 额外块数
-    const int t = (q + 1) * p;    // 分界点
+    // Calculate block partitioning parameters
+    const int q = n / m;          // Base block size
+    const int p = n % m;          // Number of extra blocks
+    const int t = (q + 1) * p;    // Boundary point
     
-    // 初始化输出矩阵
+    // Initialize output matrix
     V = std::vector<std::vector<double>>(m, std::vector<double>(m, 0.0));
     C = std::vector<std::vector<int>>(m, std::vector<int>(m, 0));
     
-    // 方法1：线程私有矩阵归并（适合m较小的情况）
+    // Method 1: Thread-private matrix merge (suitable for small m)
     if (m <= 100) {
-        // 获取线程数
+        // Get number of threads
         int num_threads = omp_get_max_threads();
         
-        // 每个线程的私有矩阵
+        // Thread-private matrices
         std::vector<std::vector<std::vector<double>>> V_private(
             num_threads, std::vector<std::vector<double>>(
                 m, std::vector<double>(m, (op == PoolingOp::MAX) ? 
@@ -65,7 +65,7 @@ void parallel_pooling_coo(const std::vector<double>& val,
                 int i = row[k];
                 int j = col[k];
                 
-                // 计算池化坐标
+                // Calculate pooling coordinates
                 int I, J;
                 if (i < t) {
                     I = i / (q + 1);
@@ -79,9 +79,9 @@ void parallel_pooling_coo(const std::vector<double>& val,
                     J = (j - t) / q + p;
                 }
                 
-                // 确保在有效范围内
+                // Ensure within valid range
                 if (I >= 0 && I < m && J >= 0 && J < m) {
-                    // 根据操作类型更新
+                    // Update based on operation type
                     if (op == PoolingOp::SUM) {
                         V_private[tid][I][J] += val[k];
                     } else { // MAX
@@ -94,7 +94,7 @@ void parallel_pooling_coo(const std::vector<double>& val,
             }
         }
         
-        // 合并线程私有矩阵
+        // Merge thread-private matrices
         for (int tid = 0; tid < num_threads; tid++) {
             for (int i = 0; i < m; i++) {
                 for (int j = 0; j < m; j++) {
@@ -110,14 +110,14 @@ void parallel_pooling_coo(const std::vector<double>& val,
             }
         }
     }
-    // 方法2：原子操作（适合m较大的情况）
+    // Method 2: Atomic operations (suitable for large m)
     else {
         #pragma omp parallel for
         for (int k = 0; k < nnz; k++) {
             int i = row[k];
             int j = col[k];
             
-            // 计算池化坐标
+            // Calculate pooling coordinates
             int I, J;
             if (i < t) {
                 I = i / (q + 1);
@@ -131,16 +131,16 @@ void parallel_pooling_coo(const std::vector<double>& val,
                 J = (j - t) / q + p;
             }
             
-            // 确保在有效范围内
+            // Ensure within valid range
             if (I >= 0 && I < m && J >= 0 && J < m) {
-                // 根据操作类型使用不同同步策略
+                // Use different synchronization strategies based on operation type
                 if (op == PoolingOp::SUM) {
                     #pragma omp atomic
                     V[I][J] += val[k];
                     #pragma omp atomic
                     C[I][J]++;
                 } else { // MAX
-                    // 使用临界区保护最大值更新
+                    // Use critical section to protect max updates
                     #pragma omp critical
                     {
                         if (val[k] > V[I][J]) {
@@ -154,7 +154,7 @@ void parallel_pooling_coo(const std::vector<double>& val,
     }
 }
 
-// 支持CSR格式的并行池化函数
+// Parallel pooling function supporting CSR format
 void parallel_pooling_csr(const std::vector<double>& values,
                           const std::vector<int>& col_indices,
                           const std::vector<int>& row_ptr,
@@ -162,7 +162,7 @@ void parallel_pooling_csr(const std::vector<double>& values,
                           std::vector<std::vector<double>>& V,
                           std::vector<std::vector<int>>& C) 
 {
-    // 检查输入有效性
+    // Check input validity
     if (values.size() != col_indices.size()) {
         throw std::invalid_argument("values and col_indices must have same size");
     }
@@ -174,40 +174,40 @@ void parallel_pooling_csr(const std::vector<double>& values,
         return;
     }
     
-    // 检查row_ptr有效性
+    // Check row_ptr validity
     if (row_ptr.empty() || row_ptr.back() != nnz) {
         throw std::invalid_argument("Invalid row_ptr array");
     }
     
-    // 计算块划分参数
-    const int q = n / m;          // 基础块大小
-    const int p = n % m;          // 额外块数
-    const int t = (q + 1) * p;    // 分界点
+    // Calculate block partitioning parameters
+    const int q = n / m;          // Base block size
+    const int p = n % m;          // Number of extra blocks
+    const int t = (q + 1) * p;    // Boundary point
     
-    // 初始化输出矩阵
+    // Initialize output matrix
     V = std::vector<std::vector<double>>(m, std::vector<double>(m, 0.0));
     C = std::vector<std::vector<int>>(m, std::vector<int>(m, 0));
     
     #pragma omp parallel
     {
-        // 每个线程的私有矩阵
+        // Thread-private matrices
         std::vector<std::vector<double>> V_local(m, std::vector<double>(m, 
             (op == PoolingOp::MAX) ? -std::numeric_limits<double>::max() : 0.0));
         std::vector<std::vector<int>> C_local(m, std::vector<int>(m, 0));
         
-        // 并行处理每一行
+        // Process each row in parallel
         #pragma omp for
         for (int i = 0; i < n; i++) {
-            // 获取当前行的非零元素范围
+            // Get non-zero element range for current row
             const int start_idx = row_ptr[i];
             const int end_idx = row_ptr[i + 1];
             
-            // 处理当前行的所有非零元素
+            // Process all non-zero elements in current row
             for (int k = start_idx; k < end_idx; k++) {
                 const double val = values[k];
                 const int j = col_indices[k];
                 
-                // 计算池化坐标
+                // Calculate pooling coordinates
                 int I, J;
                 if (i < t) {
                     I = i / (q + 1);
@@ -221,9 +221,9 @@ void parallel_pooling_csr(const std::vector<double>& values,
                     J = (j - t) / q + p;
                 }
                 
-                // 确保在有效范围内
+                // Ensure within valid range
                 if (I >= 0 && I < m && J >= 0 && J < m) {
-                    // 根据操作类型更新
+                    // Update based on operation type
                     if (op == PoolingOp::SUM) {
                         V_local[I][J] += val;
                     } else { // MAX
@@ -236,7 +236,7 @@ void parallel_pooling_csr(const std::vector<double>& values,
             }
         }
         
-        // 合并线程结果到全局矩阵
+        // Merge thread results into global matrix
         #pragma omp critical
         {
             for (int i = 0; i < m; i++) {
@@ -303,7 +303,7 @@ void pool_dataset(std::ifstream &input_file, std::ofstream &out_file, int m, Poo
         std::stringstream ss(line);
         std::string cell;
 
-        // 解析CSV行
+        // Parse CSV line
         while(std::getline(ss, cell, ','))
         {
             try 
@@ -319,22 +319,22 @@ void pool_dataset(std::ifstream &input_file, std::ofstream &out_file, int m, Poo
             }            
         }
 
-        // 检查最小数据量要求
+        // Check minimum data requirement
         if (row_data.size() < 6) {
             std::cerr << "Error: Line " << line_num << " has only " 
                       << row_data.size() << " elements (minimum 6 required). Skipping.\n";
             continue;
         }
 
-        // 提取元数据
+        // Extract metadata
         int n_rows = static_cast<int>(row_data[0]);
-        double theta = row_data[2];  // 修正索引
-        double rho = row_data[3];    // 修正索引
-        double h = row_data[4];      // 修正索引
-        unsigned int nnz = static_cast<unsigned int>(row_data[5]);  // 非零元素数量
-        unsigned int row_ptr_size = n_rows + 1;  // row_ptr数组大小
+        double theta = row_data[2];  // Corrected index
+        double rho = row_data[3];    // Corrected index
+        double h = row_data[4];      // Corrected index
+        unsigned int nnz = static_cast<unsigned int>(row_data[5]);  // Number of non-zero elements
+        unsigned int row_ptr_size = n_rows + 1;  // row_ptr array size
         
-        // 验证数据量
+        // Verify data volume
         unsigned int min_required = 6 + nnz + nnz + row_ptr_size;
         if (row_data.size() < min_required) {
             std::cerr << "Error: Line " << line_num << " requires at least " 
@@ -343,28 +343,28 @@ void pool_dataset(std::ifstream &input_file, std::ofstream &out_file, int m, Poo
             continue;
         }
         
-        // 提取CSR格式数据
+        // Extract CSR format data
         std::vector<double> values;
         std::vector<int> col_indices;
         std::vector<int> row_ptr;
         
-        // 提取非零值 (从索引5开始)
+        // Extract non-zero values (starting from index 6)
         for (unsigned int i = 6; i < 6 + nnz; ++i) {
             values.push_back(row_data[i]);
         }
 
-        // 提取行指针 (从索引5+2*nnz开始)
+        // Extract row pointers (starting from index 6 + nnz + row_ptr_size)
         for (unsigned int i = 6 + nnz; i < 6 + nnz + row_ptr_size; ++i) {
             row_ptr.push_back(static_cast<int>(row_data[i]));
         }        
         
-        // 提取列索引 (从索引5+nnz开始)
+        // Extract column indices (starting from index 6 + nnz + row_ptr_size)
         for (unsigned int i = 6 + nnz + row_ptr_size; i < 6 + 2*nnz + row_ptr_size; ++i) {
             col_indices.push_back(static_cast<int>(row_data[i]));
         }
         
         
-        // 验证行指针
+        // Validate row pointers
         if (row_ptr.size() != static_cast<size_t>(n_rows + 1) || row_ptr.back() != static_cast<int>(nnz)) {
             std::cerr << "Error: Invalid row_ptr at line " << line_num 
                       << ". Expected size: " << (n_rows + 1)
@@ -374,7 +374,7 @@ void pool_dataset(std::ifstream &input_file, std::ofstream &out_file, int m, Poo
             continue;
         }
         
-        // 验证索引范围
+        // Validate index ranges
         bool invalid_index = false;
         for (int col_idx : col_indices) {
             if (col_idx < 0 || col_idx >= n_rows) {
@@ -389,12 +389,12 @@ void pool_dataset(std::ifstream &input_file, std::ofstream &out_file, int m, Poo
             continue;
         }
         
-        // 执行池化 (使用CSR格式)
+        // Execute pooling (using CSR format)
         try {
             parallel_pooling_csr(values, col_indices, row_ptr, n_rows, m, op, V, C);
             std_normalize(V);
             
-            // 写入结果
+            // Write results
             out_file << rho << "," << theta << "," << h;
             for (const auto& vec : V) {
                 for (double value : vec) {

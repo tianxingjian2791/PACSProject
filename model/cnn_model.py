@@ -86,18 +86,18 @@ class CNNModel(nn.Module):
 
 def train(model, loader, optimizer, device):
     """
-    训练模型
+    Train model
     
-    参数:
-        model: GAT模型
-        loader: 数据加载器
-        optimizer: 优化器
-        device: 计算设备
+    Parameters:
+        model: CNN
+        loader: data loader
+        optimizer: used to optimize the cost function
+        device: computing device
         
-    返回:
-        平均损失
+    return:
+        mse
     """
-    # 创建进度条
+    # Make a progress bar
     progress_bar = tqdm(total=600, desc="Iterations:")    
 
     model.train()
@@ -108,13 +108,13 @@ def train(model, loader, optimizer, device):
         # data = data.to(device)
         optimizer.zero_grad()
         
-        # 前向传播
+        # Forward
         out = model(data[0])
         
-        # 计算损失
+        # Compute loss
         loss = F.mse_loss(out, data[1])
         
-        # 反向传播
+        # Backward propagation
         loss.backward()
         optimizer.step()
         
@@ -126,15 +126,15 @@ def train(model, loader, optimizer, device):
 
 def test(model, loader, device):
     """
-    测试模型
+    Test for the nerual network
     
-    参数:
-        model: GAT模型
-        loader: 数据加载器
-        device: 计算设备
+    Parameters:
+        model: CNN
+        loader: data loader
+        device: computing device
         
-    返回:
-        平均损失
+    return:
+        mse
     """
     model.eval()
     total_loss = 0

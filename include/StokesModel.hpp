@@ -255,8 +255,6 @@ namespace AMGStokes
     void set_init_refinement(unsigned int refinement);
     void set_n_cycle(unsigned int n_cycle);
 
-
-    // 辅助函数：生成线性间隔数组
     static std::vector<double> linspace(double start, double end, size_t num_points) 
     {
       std::vector<double> result;
@@ -356,21 +354,21 @@ namespace AMGStokes
     {
       GridGenerator::hyper_cube(triangulation, -0.5, 1.5);
     }
-    else // 顶盖驱动方腔流
+    else // The Lid-Driven Cavity Problem
     {
-      // 创建标准方腔网格 [0,1]^dim
+      // Generate the standard grids of the problem [0,1]^dim
       GridGenerator::hyper_cube(triangulation, 0, 1);
       
-      // 标记顶盖边界(y=1)
+      // Mark the boundaries(y=1)
       for (auto &cell : triangulation.active_cell_iterators()) {
         for (unsigned int f = 0; f < GeometryInfo<dim>::faces_per_cell; ++f) {
           if (cell->face(f)->at_boundary()) {
             const Point<dim> center = cell->face(f)->center();
-            // 检测顶盖边界(y≈1)
+            // Check the top boundary(y≈1)
             if (std::abs(center[1] - 1.0) < 1e-5) {
-              cell->face(f)->set_boundary_id(1); // 顶盖边界
+              cell->face(f)->set_boundary_id(1); // top doundary
             } else {
-              cell->face(f)->set_boundary_id(0); // 壁面边界
+              cell->face(f)->set_boundary_id(0); // side boundaries
             }
           }
         }
@@ -415,7 +413,7 @@ namespace AMGStokes
       const FEValuesExtractors::Vector velocities(0);
       DoFTools::make_hanging_node_constraints(dof_handler, constraints);
       
-      if (boundary_choice == 0) // 原始问题
+      if (boundary_choice == 0) // Typical Stokes problem
       {
         VectorTools::interpolate_boundary_values(dof_handler,
           0,
@@ -423,9 +421,9 @@ namespace AMGStokes
           constraints,
           fe.component_mask(velocities));
       }
-      else // 顶盖驱动方腔流
+      else // The Lid-Driven Cavity Problem
       {
-        // 壁面边界(ID=0): 零速度
+        // Side boundaries(ID=0): 0 velocity
         VectorTools::interpolate_boundary_values(
           dof_handler,
           0,
@@ -433,7 +431,7 @@ namespace AMGStokes
           constraints,
           fe.component_mask(velocities));
         
-        // 顶盖边界(ID=1): x方向速度为1，y方向速度为0
+        // Top boundary(ID=1): The velocity on x is 1，on y is 0
         Vector<double> lid_velocity_values(dim+1);
         for (auto &v: lid_velocity_values)
           v = 0.0;
@@ -554,13 +552,13 @@ namespace AMGStokes
           // right_hand_side.vector_value_list(fe_values.get_quadrature_points(),
           //                                   rhs_values);
 
-          // 修改右端项：驱动腔流时设为0
-          if (boundary_choice == 0) { // 封闭腔体流
+          // Modify right handside：set 0 when it's the Lid-Driven Cavity Problem
+          if (boundary_choice == 0) {
             right_hand_side.vector_value_list(fe_values.get_quadrature_points(),
                                               rhs_values);
-          } else { // 驱动腔流
+          } else { // Driven problem
             for (auto &vec : rhs_values) {
-              vec = 0; // 零源项
+              vec = 0; // 0 source item
             }
           }
           
@@ -684,7 +682,7 @@ namespace AMGStokes
 
     // ρ = (||r_k|| / ||r_0||)^{1/k}
     const double rho = (k > 0) ? std::pow(final_r_norm / init_r_norm, 1.0 / k) : 0.0;
-    double h = triangulation.begin_active()->diameter(); // 网格尺寸
+    double h = triangulation.begin_active()->diameter(); // The size of grids
     write_matrix_to_csv(system_matrix, file, rho, h);
 
     // pcout << "   Solved in " << solver_control.last_step() << " iterations."
@@ -810,10 +808,9 @@ namespace AMGStokes
     double rho,
     double h)
   {  
-    // 只访问 (0,0) 块（速度-速度子矩阵）
+    // Just access to (0,0) block（velocity-velocity submatrix）
     const auto &petsc_matrix= matrix.block(0,0);
     
-    // 转换为 PETSc 矩阵
     // const Mat petsc_matrix = A00.petsc_matrix();
     
     PetscInt m, n;
@@ -832,7 +829,6 @@ namespace AMGStokes
         const PetscInt* cols;
         const PetscScalar* vals;
         
-        // 现在使用正确的 PETSc 矩阵对象
         MatGetRow(petsc_matrix, i, &ncols, &cols, &vals);
         
         row_ptr.push_back(idx);
@@ -849,18 +845,18 @@ namespace AMGStokes
     }
     row_ptr.push_back(idx);
   
-    // 写入 m(rows), n(cols), rho, h, nnz
+    // write m(rows), n(cols), rho, h, nnz
     file << m << "," << n << "," << theta << "," << rho << "," << h << "," << values.size();
   
-    // 写入所有非零值
+    // write non-zero values
     for (const auto &val : values)
     file << "," << val;
   
-    // 写入所有行索引
+    // write row ptrs
     for (const auto &r : row_ptr)
     file << "," << r;
   
-    // 写入所有列索引
+    // write col indices
     for (const auto &c : col_ind)
     file << "," << c;
   
@@ -921,7 +917,7 @@ namespace AMGStokes
     
     unsigned int sample_index = 0;
     
-    // 遍历所有参数组合
+    // Traverse
     for (unsigned int boundary_choice: boundary_choices)
     {
       for (unsigned int velocity_degree: velocity_degrees)

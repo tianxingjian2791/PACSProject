@@ -7,24 +7,24 @@ from torch_geometric.nn import GATConv, global_mean_pool
 class GATModel(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_heads=4, dropout=0.2):
         """
-        GAT模型初始化
+        GAT Initialization
         
-        参数:
-            in_channels: 输入特征维度
-            hidden_channels: 隐藏层维度
-            out_channels: 输出维度 (rho)
-            num_heads: 注意力头数
-            dropout: Dropout率
+        parameters:
+            in_channels: the dimension of input features
+            hidden_channels: the dimmension of hidden features
+            out_channels: output (rho)
+            num_heads: te number of heads
+            dropout: Dropout rate
         """
         super(GATModel, self).__init__()
         
-        # GAT层
+        # GAT layer
         self.conv1 = GATConv(
             in_channels, 
             hidden_channels, 
             heads=num_heads, 
             dropout=dropout,
-            edge_dim=1  # 使用边特征 (矩阵值)
+            edge_dim=1  # Apply the edge feature (the element of matrix))
         )
         
         self.conv2 = GATConv(
@@ -35,8 +35,8 @@ class GATModel(nn.Module):
             edge_dim=1
         )
         
-        # 全连接层
-        self.fc1 = nn.Linear(hidden_channels * num_heads + 2, hidden_channels)  # +2 用于theta和log_h
+        # Fully connected layer
+        self.fc1 = nn.Linear(hidden_channels * num_heads + 2, hidden_channels)  # +2 theta and -logh
         self.fc2 = nn.Linear(hidden_channels, out_channels)
         
         self.dropout = dropout
@@ -45,31 +45,30 @@ class GATModel(nn.Module):
 
     def forward(self, data):
         """
-        前向传播
+        Forward propagation
         
-        参数:
-            data: 包含图数据的批处理对象
+        parameter:
+            data: the batch graph data
             
-        返回:
-            rho预测值
+        return:
+            rho: predicted
         """
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
         theta = torch.reshape(data.theta, (-1,1))
         log_h = torch.reshape(data.log_h, (-1,1))
         
-        # GAT层
+        # GAT layer
         x = F.elu(self.conv1(x, edge_index, edge_attr=edge_attr))
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = F.elu(self.conv2(x, edge_index, edge_attr=edge_attr))
         
-        # 全局平均池化
         x = global_mean_pool(x, batch)
         
-        # 拼接标量特征
+        # Cat with scalar features
         scalar_features = torch.cat([theta, log_h], dim=1)
         x = torch.cat([x, scalar_features], dim=1)
         
-        # 全连接层
+        # fnn
         x = F.relu(self.fc1(x))
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.fc2(x)
@@ -78,18 +77,17 @@ class GATModel(nn.Module):
 
 def train(model, loader, optimizer, device):
     """
-    训练模型
+    Train model
     
-    参数:
-        model: GAT模型
-        loader: 数据加载器
-        optimizer: 优化器
-        device: 计算设备
+    Parameters:
+        model: GAT
+        loader: data loader
+        optimizer: Used to optimize the cost function
+        device: computing device
         
-    返回:
-        平均损失
+    return:
+        mse
     """
-    # 创建进度条
     progress_bar = tqdm(total=600, desc="Iterations:")    
 
     model.train()
@@ -100,13 +98,13 @@ def train(model, loader, optimizer, device):
         # data = data.to(device)
         optimizer.zero_grad()
         
-        # 前向传播
+        # Forward
         out = model(data)
         
-        # 计算损失
+        # Loss
         loss = F.mse_loss(out, data.y)
         
-        # 反向传播
+        # Backward
         loss.backward()
         optimizer.step()
         
@@ -118,15 +116,15 @@ def train(model, loader, optimizer, device):
 
 def test(model, loader, device):
     """
-    测试模型
+    Train model
     
-    参数:
-        model: GAT模型
-        loader: 数据加载器
-        device: 计算设备
+    Parameters:
+        model: GAT
+        loader: data loader
+        device: computing device
         
-    返回:
-        平均损失
+    return:
+        mse
     """
     model.eval()
     total_loss = 0
