@@ -6,12 +6,7 @@
 
 int main(int argc, char* argv[])
 {
-    // 示例：5×5矩阵 (COO格式)
-    // std::vector<double> val = {1.0, 2.0, 3.0, 4.0, 5.0};
-    // std::vector<int> row = {0, 1, 2, 3, 4};
-    // std::vector<int> col = {0, 1, 2, 3, 4};
-    // int n = 5;  // 原始矩阵尺寸
-    int m = 50;  // 池化后尺寸
+    int m = 50;  // the matrix size after pooling
 
     std::string input_file_name = "./datasets/train/raw/train.csv";
     std::string out_file_name = "./datasets/train/raw/train_cnn.csv";
