@@ -44,23 +44,67 @@ def compare_models(gat_logfile, cnn_logfile):
         test_gat_list3.append(float(test_loss[:-2]))
         test_cnn_list3.append(float(str_list2[idx].split(',')[1][:-2]))
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18,6))
-    ax1.plot(range(1, 51), test_gat_list1, "ro-", label="GAT")
-    ax1.plot(range(1, 51), test_cnn_list1, "b*-", label="CNN")
-    ax1.set_title("test dataset1")
-    ax1.legend()
+    # fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18,6))
+    # ax1.plot(range(1, 51), test_gat_list1, "ro-", label="GAT")
+    # ax1.plot(range(1, 51), test_cnn_list1, "b*-", label="CNN")
+    # ax1.set_title("test dataset1")
+    # ax1.legend()
 
-    ax2.plot(range(1, 51), test_gat_list2, "ro-", label="GAT")
-    ax2.plot(range(1, 51), test_cnn_list2, "b*-", label="CNN")
-    ax2.set_title("test dataset2")
-    ax2.legend()
+    # ax2.plot(range(1, 51), test_gat_list2, "ro-", label="GAT")
+    # ax2.plot(range(1, 51), test_cnn_list2, "b*-", label="CNN")
+    # ax2.set_title("test dataset2")
+    # ax2.legend()
 
-    ax3.plot(range(1, 51), test_gat_list3, "ro-", label="GAT")
-    ax3.plot(range(1, 51), test_cnn_list3, "b*-", label="CNN")
-    ax3.set_title("test dataset3")
-    ax3.legend()
+    # ax3.plot(range(1, 51), test_gat_list3, "ro-", label="GAT")
+    # ax3.plot(range(1, 51), test_cnn_list3, "b*-", label="CNN")
+    # ax3.set_title("test dataset3")
+    # ax3.legend()
+
+
+
+    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,6))
+    # ax1.plot(range(1, 51), train_gat_list1, "ro-", label="GAT")
+    # ax1.plot(range(1, 51), train_cnn_list1, "b*-", label="CNN")
+    # ax1.set_title("(a)train dataset1")
+    # ax1.legend()
+
+    # ax2.plot(range(1, 51), test_gat_list1, "ro-", label="GAT")
+    # ax2.plot(range(1, 51), test_cnn_list1, "b*-", label="CNN")
+    # ax2.set_title("(b)test dataset2")
+    # ax2.legend()
+
+    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,6))
+    # ax1.plot(range(1, 51), train_gat_list2, "ro-", label="GAT")
+    # ax1.plot(range(1, 51), train_cnn_list2, "b*-", label="CNN")
+    # ax1.set_title("(a)train dataset2")
+    # ax1.legend()
+
+    # ax2.plot(range(1, 51), test_gat_list2, "ro-", label="GAT")
+    # ax2.plot(range(1, 51), test_cnn_list2, "b*-", label="CNN")
+    # ax2.set_title("(b)test dataset2")
+    # ax2.legend()
+
+    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,6))
+    # ax1.plot(range(1, 51), train_gat_list3, "ro-", label="GAT")
+    # ax1.plot(range(1, 51), train_cnn_list3, "b*-", label="CNN")
+    # ax1.set_title("(a)train dataset3")
+    # ax1.legend()
+
+    # ax2.plot(range(1, 51), test_gat_list3, "ro-", label="GAT")
+    # ax2.plot(range(1, 51), test_cnn_list3, "b*-", label="CNN")
+    # ax2.set_title("(b)test dataset3")
+    # ax2.legend()
+
+
+
+    plt.scatter(range(5, 51, 5), test_gat_list3[4:50:5], c="red", marker="o", label="GAT")
+    plt.scatter(range(5, 51, 5), test_cnn_list3[4:50:5], c="blue", marker="*", label="CNN")
+    plt.xlim((0,55))
+    plt.title("test dataset3")
+    plt.legend()
 
     plt.show()
+
 
 if __name__ == "__main__":
     compare_models("train_log.txt", "train_cnn_log.txt")
