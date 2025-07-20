@@ -563,9 +563,6 @@ namespace AMGElastic
       double lambda;
   };
 
-  // 使用示例
-  // MaterialProperties steel(200e9, 0.3); // 钢
-  // MaterialProperties rubber(0.01e9, 0.499); // 橡胶
 
   void generate_dataset(std::ofstream &file, std::string train_flag)
   {
