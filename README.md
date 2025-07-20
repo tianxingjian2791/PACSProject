@@ -15,7 +15,12 @@ Its research topic is accelerating AMG by deep learning method.
         |--model.py
     |--data
         |--data_processing.py
-    |--main.py
+    |--weights
+        |--*.pth
+    |--train.py
+    |--val.py
+    |--train_log.txt
+    |--train_cnn_log.txt
 ```
 
 ## Dataset generation
