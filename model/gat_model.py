@@ -56,7 +56,12 @@ class GATModel(nn.Module):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
         theta = torch.reshape(data.theta, (-1,1))
         log_h = torch.reshape(data.log_h, (-1,1))
-        
+       
+        # Transfer to GPU tensor
+        # x, edge_index, edge_attr, batch = x.cuda(), edge_index.cuda(), edge_attr.cuda(), batch.cuda()
+        if torch.cuda.is_available():
+            theta, log_h = theta.cuda(), log_h.cuda()
+
         # GAT layer
         x = F.elu(self.conv1(x, edge_index, edge_attr=edge_attr))
         x = F.dropout(x, p=self.dropout, training=self.training)
@@ -88,7 +93,7 @@ def train(model, loader, optimizer, device):
     return:
         mse
     """
-    progress_bar = tqdm(total=600, desc="Iterations:")    
+    progress_bar = tqdm(total=len(loader.dataset) // loader.batch_size, desc="Iterations:")    
 
     model.train()
     total_loss = 0
@@ -99,6 +104,7 @@ def train(model, loader, optimizer, device):
         optimizer.zero_grad()
         
         # Forward
+        data=data.to(device)
         out = model(data)
         
         # Loss
