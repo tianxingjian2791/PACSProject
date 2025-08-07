@@ -53,7 +53,7 @@ def train_model(train_file, test_file, save_model_path, model_type, batch_size=8
     # Begin the training
     train_loss_list = []
     test_loss_list = []
-    with open("train_cnn_log.txt", mode='+a') as log_f:
+    with open("train_gat_log.txt", mode='+a') as log_f:
         log_f.write(f"======training for {train_file}======\n")
         for epoch in range(1, num_epochs + 1):
             print(f"======training model: {epoch}/{num_epochs}======")
@@ -88,28 +88,27 @@ def train_model(train_file, test_file, save_model_path, model_type, batch_size=8
 if __name__ == "__main__":
     # train all the datasets
     # train_model("train.csv", "test.csv", 'gat_amg_model.pth')
-    train_model("datasets/train/raw/train_cnn.csv", "datasets/test/raw/test_cnn.csv", "cnn_amg_model.pth", "CNN")
+    # train_model("datasets/train/raw/train_cnn.csv", "datasets/test/raw/test_cnn.csv", "cnn_amg_model.pth", "CNN")
 
     # train dataset1
-    # train_model("train1.csv", "test1.csv", 'gat_amg_model1.pth')
+    # train_model("train1.csv", "test1.csv", 'gat_amg_model1.pth', "GAT", 8)
     # train_model("datasets/train/raw/train1_cnn.csv", "datasets/test/raw/test1_cnn.csv", "cnn_amg_model1.pth", "CNN")
 
     # train dataset2
-    # train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth', "GAT")
+    # train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth', "GAT", 4)
     # train_model("datasets/train/raw/train2_cnn.csv", "datasets/test/raw/test2_cnn.csv", "cnn_amg_model2.pth", "CNN")
 
     # train dataset3
-    # train_model("train3.csv", "test3.csv", 'gat_amg_model3.pth')
+    train_model("train3.csv", "test3.csv", 'gat_amg_model3.pth', "GAT", 4)
     # train_model("datasets/train/raw/train3_cnn.csv", "datasets/test/raw/test3_cnn.csv", "cnn_amg_model3.pth", "CNN")
 
 # Test one single sample
-"""
-if len(test_loader.dataset) > 0:
-    sample = test_loader.dataset[0].to(device)
-    model.eval()
-    with torch.no_grad():
-        prediction = model(sample)
-        print(f"\nThe predictive result of the sample:")
-        print(f"real rho: {sample.y.item():.4f}")
-        print(f"predicted rho: {prediction.item():.4f}")
-"""
+
+# if len(test_loader.dataset) > 0:
+#     sample = test_loader.dataset[0].to(device)
+#     model.eval()
+#     with torch.no_grad():
+#         prediction = model(sample)
+#         print(f"\nThe predictive result of the sample:")
+#         print(f"real rho: {sample.y.item():.4f}")
+#         print(f"predicted rho: {prediction.item():.4f}")
