@@ -95,11 +95,11 @@ if __name__ == "__main__":
     # train_model("datasets/train/raw/train1_cnn.csv", "datasets/test/raw/test1_cnn.csv", "cnn_amg_model1.pth", "CNN")
 
     # train dataset2
-    # train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth', "GAT", 4)
+    train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth', "GAT", 4)
     # train_model("datasets/train/raw/train2_cnn.csv", "datasets/test/raw/test2_cnn.csv", "cnn_amg_model2.pth", "CNN")
 
     # train dataset3
-    train_model("train3.csv", "test3.csv", 'gat_amg_model3.pth', "GAT", 4)
+    # train_model("train3.csv", "test3.csv", 'gat_amg_model3.pth', "GAT", 4)
     # train_model("datasets/train/raw/train3_cnn.csv", "datasets/test/raw/test3_cnn.csv", "cnn_amg_model3.pth", "CNN")
 
 # Test one single sample
