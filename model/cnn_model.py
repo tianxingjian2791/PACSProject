@@ -105,14 +105,13 @@ def train(model, loader, optimizer, device):
     
     for data in loader:
         progress_bar.update(1)
-        # data = data.to(device)
         optimizer.zero_grad()
         
         # Forward
-        out = model(data[0])
+        out = model(data[0].to(device))
         
         # Compute loss
-        loss = F.mse_loss(out, data[1])
+        loss = F.mse_loss(out, data[1].to(device))
         
         # Backward propagation
         loss.backward()
