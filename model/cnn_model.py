@@ -25,6 +25,20 @@ class CNNModel(nn.Module):
             kernel_size, 
             padding= 'same')
         
+        self.conv1_2 = nn.Conv2d(
+            hidden_channels,
+            hidden_channels,
+            kernel_size,
+            padding='same'
+        )
+
+        self.conv1_3 = nn.Conv2d(
+            hidden_channels,
+            hidden_channels,
+            kernel_size,
+            padding='same'
+        )
+
         self.conv2 = nn.Conv2d(
             hidden_channels,
             out_channels,
@@ -65,6 +79,10 @@ class CNNModel(nn.Module):
 
         # CNN
         x = self.conv1(x)
+        x = self.relu(x)
+        x = self.conv1_2(x)
+        x = self.relu(x)
+        x = self.conv1_3(x)
         x = self.relu(x)
         x = self.conv2(x)
         x = self.relu(x)
