@@ -8,19 +8,24 @@ Its research topic is accelerating AMG by deep learning method.
 ```
 |--PACSProject
     |--include
-        |--*.hpp
+        |--DiffusionModel.hpp
+        |--ElasticModel.hpp
+        |--Pooling.hpp
+        |--StokesModel.hpp
     |--src
-        |--*.cpp
+        |--main.cpp
     |--model
-        |--model.py
+        |--cnn_model.py
+        |--gat_model.py
     |--data
-        |--data_processing.py
+        |--cnn_data_processing.py
+        |--gat_data_processing.py
     |--weights
         |--*.pth
     |--train.py
     |--val.py
-    |--train_log.txt
     |--train_cnn_log.txt
+    |--train_gat_log.txt
 ```
 
 ## Dataset generation
