@@ -53,7 +53,7 @@ def train_model(train_file, test_file, save_model_path, model_type, batch_size=8
     # Begin the training
     train_loss_list = []
     test_loss_list = []
-    with open("train_gat_log.txt", mode='+a') as log_f:
+    with open("train_cnn_log.txt", mode='+a') as log_f:
         log_f.write(f"======training for {train_file}======\n")
         for epoch in range(1, num_epochs + 1):
             print(f"======training model: {epoch}/{num_epochs}======")
@@ -91,16 +91,16 @@ if __name__ == "__main__":
     # train_model("datasets/train/raw/train_cnn.csv", "datasets/test/raw/test_cnn.csv", "cnn_amg_model.pth", "CNN")
 
     # train dataset1
-    # train_model("train1.csv", "test1.csv", 'gat_amg_model1.pth', "GAT", 8)
-    # train_model("datasets/train/raw/train1_cnn.csv", "datasets/test/raw/test1_cnn.csv", "cnn_amg_model1.pth", "CNN")
+    # train_model("train1.csv", "test1.csv", 'gat_amg_model1.pth', "GAT", 4)
+    # train_model("datasets/train/raw/train1_cnn.csv", "datasets/test/raw/test1_cnn.csv", "cnn_amg_model1.pth", "CNN", 4)
 
     # train dataset2
-    train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth', "GAT", 4)
-    # train_model("datasets/train/raw/train2_cnn.csv", "datasets/test/raw/test2_cnn.csv", "cnn_amg_model2.pth", "CNN")
+    # train_model("train2.csv", "test2.csv", 'gat_amg_model2.pth', "GAT", 4)
+    train_model("datasets/train/raw/train2_cnn.csv", "datasets/test/raw/test2_cnn.csv", "cnn_amg_model2.pth", "CNN", 4)
 
     # train dataset3
     # train_model("train3.csv", "test3.csv", 'gat_amg_model3.pth', "GAT", 4)
-    # train_model("datasets/train/raw/train3_cnn.csv", "datasets/test/raw/test3_cnn.csv", "cnn_amg_model3.pth", "CNN")
+    # train_model("datasets/train/raw/train3_cnn.csv", "datasets/test/raw/test3_cnn.csv", "cnn_amg_model3.pth", "CNN", 4)
 
 # Test one single sample
 
