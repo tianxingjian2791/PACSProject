@@ -6,6 +6,8 @@
 
 int main(int argc, char* argv[])
 {
+    /*
+    // This part is used to pool the original dataset to a smaller size for CNN input
     int m = 50;  // the matrix size after pooling
 
     std::string input_file_name = "./datasets/train/raw/train.csv";
@@ -35,8 +37,9 @@ int main(int argc, char* argv[])
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
     }
+    */
 
-    /*
+    
     // This part is used to generate different datasets, which is very important to train the neural networks
     try
     {
@@ -171,7 +174,7 @@ int main(int argc, char* argv[])
                 << "----------------------------------------------------" << std::endl;
     return 1;
     }
-    */
+    
 
     return 0;
 }
