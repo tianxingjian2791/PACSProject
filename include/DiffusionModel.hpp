@@ -38,6 +38,8 @@
 #include <iostream>
 #include <cmath>
 
+#include "AMGOperators.hpp"
+
 
 namespace AMGDiffusion
 {
@@ -198,6 +200,14 @@ namespace AMGDiffusion
     double epsilon;
   };
 
+  // Output format enum
+  enum class OutputFormat
+  {
+    THETA_CNN,   // theta prediction - CNN format (pooled)
+    THETA_GNN,   // theta prediction - GNN format (graph)
+    P_VALUE      // P-value prediction (with C/F splitting and P, S matrices)
+  };
+
   // Solver
   template <int dim>
   class Solver
@@ -208,7 +218,9 @@ namespace AMGDiffusion
     void set_theta(double theta);
     void set_epsilon(double epsilon);
     void set_refinement(unsigned int refinement);
+    void set_output_format(OutputFormat format);
     void run(std::ofstream &file);
+    void run(std::ofstream &file, OutputFormat format);
 
 
     // support static function
@@ -233,7 +245,10 @@ namespace AMGDiffusion
     void setup_system();
     void assemble_system();
     void solve(std::ofstream &file);
+    void solve_with_format(std::ofstream &file, OutputFormat format);
     void write_matrix_to_csv(const PETScWrappers::MPI::SparseMatrix &matrix, std::ofstream &file, double rho, double h);
+    void write_pvalue_to_csv(const PETScWrappers::MPI::SparseMatrix &matrix, std::ofstream &file, double rho, double h);
+    AMGOperators::CSRMatrix petsc_to_csr(const PETScWrappers::MPI::SparseMatrix &matrix);
 
 
     // mode parameter
@@ -241,6 +256,7 @@ namespace AMGDiffusion
     double theta;
     double epsilon;
     unsigned int refinement;
+    OutputFormat output_format;
 
     // Grids and finite elements 
     dealii::Triangulation<dim> triangulation;
@@ -272,6 +288,7 @@ namespace AMGDiffusion
     , exact_solution(pattern)
     , right_hand_side(pattern)
     , diffusion_coefficient(pattern, epsilon)
+    , output_format(OutputFormat::THETA_GNN) // default format
   {}
 
   template <int dim>
@@ -306,6 +323,12 @@ namespace AMGDiffusion
   void Solver<dim>::set_refinement(unsigned int refinement)
   {
     this->refinement = refinement;
+  }
+
+  template <int dim>
+  void Solver<dim>::set_output_format(OutputFormat format)
+  {
+    this->output_format = format;
   }
 
   template <int dim>
@@ -515,14 +538,197 @@ namespace AMGDiffusion
     file << "\n";
   }
 
+  /**
+   * Convert PETSc matrix to CSRMatrix format for AMG operations
+   */
+  template <int dim>
+  AMGOperators::CSRMatrix Solver<dim>::petsc_to_csr(const PETScWrappers::MPI::SparseMatrix &matrix)
+  {
+    const unsigned int n = matrix.m();
+    AMGOperators::CSRMatrix csr(n, n);
+
+    PetscInt start, end;
+    MatGetOwnershipRange(matrix, &start, &end);
+
+    std::vector<std::vector<int>> temp_cols(n);
+    std::vector<std::vector<double>> temp_vals(n);
+
+    // Extract matrix data
+    for (PetscInt i = start; i < end; i++)
+    {
+      PetscInt ncols;
+      const PetscInt* cols;
+      const PetscScalar* vals;
+      MatGetRow(matrix, i, &ncols, &cols, &vals);
+
+      for (PetscInt j = 0; j < ncols; j++)
+      {
+        if (std::abs(vals[j]) > 1e-12)  // Filter near-zeros
+        {
+          temp_cols[i].push_back(cols[j]);
+          temp_vals[i].push_back(vals[j]);
+        }
+      }
+
+      MatRestoreRow(matrix, i, &ncols, &cols, &vals);
+    }
+
+    // Build CSR format
+    csr.row_ptr[0] = 0;
+    for (unsigned int i = 0; i < n; i++)
+    {
+      csr.row_ptr[i + 1] = csr.row_ptr[i] + temp_cols[i].size();
+      csr.col_indices.insert(csr.col_indices.end(), temp_cols[i].begin(), temp_cols[i].end());
+      csr.values.insert(csr.values.end(), temp_vals[i].begin(), temp_vals[i].end());
+    }
+
+    return csr;
+  }
+
+  /**
+   * Write P-value format CSV with C/F splitting and P, S matrices
+   * Format: n, n, theta, rho, h, nnz,
+   *         [A_values], [A_row_ptrs], [A_col_indices],
+   *         num_coarse, [coarse_indices],
+   *         nnz_P, [P_values], [P_row_ptrs], [P_col_indices],
+   *         nnz_S, [S_values], [S_row_ptrs], [S_col_indices]
+   */
+  template <int dim>
+  void Solver<dim>::write_pvalue_to_csv(const PETScWrappers::MPI::SparseMatrix &matrix,
+                                         std::ofstream &file,
+                                         double rho,
+                                         double h)
+  {
+    // Convert to CSR format
+    AMGOperators::CSRMatrix A = petsc_to_csr(matrix);
+
+    const unsigned int n = A.n_rows;
+
+    // Perform C/F splitting using theta
+    std::vector<int> cf_markers = AMGOperators::classical_cf_splitting(A, theta);
+    std::vector<int> coarse_nodes = AMGOperators::extract_coarse_nodes(cf_markers);
+
+    // Compute prolongation matrix P
+    AMGOperators::CSRMatrix P = AMGOperators::compute_baseline_prolongation(A, cf_markers);
+
+    // Compute strength matrix S
+    AMGOperators::CSRMatrix S = AMGOperators::compute_strength_matrix(A, theta);
+
+    // Write to CSV
+    // Header: n, n, theta, rho, h, nnz_A
+    file << n << "," << n << "," << theta << "," << rho << "," << h << "," << A.nnz();
+
+    // Write A matrix values
+    for (const auto &val : A.values)
+      file << "," << val;
+
+    // Write A row pointers
+    for (const auto &r : A.row_ptr)
+      file << "," << r;
+
+    // Write A column indices
+    for (const auto &c : A.col_indices)
+      file << "," << c;
+
+    // Write number of coarse nodes
+    file << "," << coarse_nodes.size();
+
+    // Write coarse node indices
+    for (const auto &c : coarse_nodes)
+      file << "," << c;
+
+    // Write P matrix: nnz_P, values, row_ptr, col_indices
+    file << "," << P.nnz();
+    for (const auto &val : P.values)
+      file << "," << val;
+    for (const auto &r : P.row_ptr)
+      file << "," << r;
+    for (const auto &c : P.col_indices)
+      file << "," << c;
+
+    // Write S matrix: nnz_S, values, row_ptr, col_indices
+    file << "," << S.nnz();
+    for (const auto &val : S.values)
+      file << "," << val;
+    for (const auto &r : S.row_ptr)
+      file << "," << r;
+    for (const auto &c : S.col_indices)
+      file << "," << c;
+
+    file << "\n";
+  }
+
+  /**
+   * Solve with specified output format
+   */
+  template <int dim>
+  void Solver<dim>::solve_with_format(std::ofstream &file, OutputFormat format)
+  {
+    // Solve system (same as before)
+    dealii::PETScWrappers::SolverCG solver(solver_control, MPI_COMM_WORLD);
+    dealii::PETScWrappers::PreconditionBoomerAMG preconditioner;
+
+    dealii::PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
+    data.strong_threshold = theta;
+    data.symmetric_operator = true;
+
+    preconditioner.initialize(system_matrix, data);
+
+    PETScWrappers::MPI::Vector residual(system_rhs);
+
+    system_matrix.vmult(residual, solution);
+    residual -= system_rhs;
+    double init_r_norm = residual.l2_norm();
+
+    solver.solve(system_matrix, solution, system_rhs, preconditioner);
+
+    system_matrix.vmult(residual, solution);
+    residual -= system_rhs;
+    double final_r_norm = residual.l2_norm();
+
+    const unsigned int k = solver_control.last_step();
+    if (k < 1)
+    {
+      std::cerr << "Warning: Insufficient residuals recorded ("
+                << k << "). Returning rho=0." << std::endl;
+      return;
+    }
+
+    const double rho = (k > 0) ? std::pow(final_r_norm / init_r_norm, 1.0 / k) : 0.0;
+    double h = triangulation.begin_active()->diameter();
+
+    // Write based on format
+    if (format == OutputFormat::P_VALUE)
+    {
+      write_pvalue_to_csv(system_matrix, file, rho, h);
+    }
+    else
+    {
+      // THETA_CNN and THETA_GNN both use same format (for now)
+      write_matrix_to_csv(system_matrix, file, rho, h);
+    }
+
+    constraints.distribute(solution);
+  }
+
   template <int dim>
   void Solver<dim>::run(std::ofstream &file)
   {
     make_grid();
     setup_system();
     assemble_system();
-    
+
     solve(file);
+  }
+
+  template <int dim>
+  void Solver<dim>::run(std::ofstream &file, OutputFormat format)
+  {
+    make_grid();
+    setup_system();
+    assemble_system();
+
+    solve_with_format(file, format);
 
   }
 
