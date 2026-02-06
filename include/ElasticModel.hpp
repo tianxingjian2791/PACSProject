@@ -57,7 +57,12 @@ namespace AMGElastic
     void run(std::ofstream &file);
     void set_theta(double theta);
 
-    static std::vector<double> linspace(double start, double end, size_t num_points) 
+    // Getter methods for unified interface
+    AMGOperators::CSRMatrix get_system_matrix_csr();
+    double get_mesh_size() const;
+    double get_convergence_factor() const;
+
+    static std::vector<double> linspace(double start, double end, size_t num_points)
     {
       std::vector<double> result;
       if (num_points == 0) return result;
@@ -65,7 +70,7 @@ namespace AMGElastic
           result.push_back(start);
           return result;
       }
-      
+
       double step = (end - start) / (num_points - 1);
       for (size_t i = 0; i < num_points; i++) {
           result.push_back(start + i * step);
@@ -80,6 +85,7 @@ namespace AMGElastic
     void         refine_grid();
     void         output_results(const unsigned int cycle) const;
     void write_matrix_to_csv(const PETScWrappers::MPI::SparseMatrix &matrix, std::ofstream &file, double rho, double h);
+    AMGOperators::CSRMatrix petsc_to_csr(const PETScWrappers::MPI::SparseMatrix &matrix);
 
     MPI_Comm mpi_communicator;
 
@@ -88,6 +94,10 @@ namespace AMGElastic
     double lambda_;
     double mu_;
     double theta;
+
+    // Convergence metrics (to be stored after solve)
+    double convergence_factor;
+    double mesh_size_h;
 
     ConditionalOStream pcout;
 
@@ -352,6 +362,11 @@ namespace AMGElastic
     // ρ = (||r_k|| / ||r_0||)^{1/k}
     const double rho = (k > 0) ? std::pow(final_r_norm / init_r_norm, 1.0 / k) : 0.0;
     double h = triangulation.begin_active()->diameter(); // The step of grids
+
+    // Store convergence metrics for getter methods
+    convergence_factor = rho;
+    mesh_size_h = h;
+
     write_matrix_to_csv(system_matrix, file, rho, h);
 
     return solver_control.last_step();
@@ -541,6 +556,87 @@ namespace AMGElastic
   }
 
 
+  // ============================================================================
+  // Getter Method Implementations
+  // ============================================================================
+
+  template <int dim>
+  AMGOperators::CSRMatrix ElasticProblem<dim>::get_system_matrix_csr()
+  {
+    return petsc_to_csr(system_matrix);
+  }
+
+  template <int dim>
+  double ElasticProblem<dim>::get_mesh_size() const
+  {
+    return mesh_size_h;
+  }
+
+  template <int dim>
+  double ElasticProblem<dim>::get_convergence_factor() const
+  {
+    return convergence_factor;
+  }
+
+  // ============================================================================
+  // PETSc to CSR Conversion
+  // ============================================================================
+
+  template <int dim>
+  AMGOperators::CSRMatrix ElasticProblem<dim>::petsc_to_csr(const PETScWrappers::MPI::SparseMatrix &matrix)
+  {
+    const unsigned int m = matrix.m();
+    const unsigned int n = matrix.n();
+
+    PetscInt start, end;
+    MatGetOwnershipRange(matrix, &start, &end);
+
+    std::vector<PetscInt> row_ptr;
+    std::vector<PetscInt> col_ind;
+    std::vector<PetscScalar> values;
+
+    PetscInt idx = 0;
+    for (PetscInt i = start; i < end; i++) {
+      PetscInt ncols;
+      const PetscInt* cols;
+      const PetscScalar* vals;
+      MatGetRow(matrix, i, &ncols, &cols, &vals);
+
+      row_ptr.push_back(idx);
+      double zero_tol = 1e-12;
+      for (PetscInt j = 0; j < ncols; j++) {
+        if (std::abs(vals[j]) > zero_tol) {
+          col_ind.push_back(cols[j]);
+          values.push_back(vals[j]);
+          idx++;
+        }
+      }
+      MatRestoreRow(matrix, i, &ncols, &cols, &vals);
+    }
+    row_ptr.push_back(idx);
+
+    // Build CSRMatrix
+    AMGOperators::CSRMatrix A;
+    A.n_rows = m;
+    A.n_cols = n;
+    A.row_ptr.resize(row_ptr.size());
+    A.col_indices.resize(col_ind.size());
+    A.values.resize(values.size());
+
+    for (size_t i = 0; i < row_ptr.size(); ++i)
+      A.row_ptr[i] = row_ptr[i];
+    for (size_t i = 0; i < col_ind.size(); ++i)
+      A.col_indices[i] = col_ind[i];
+    for (size_t i = 0; i < values.size(); ++i)
+      A.values[i] = values[i];
+
+    return A;
+  }
+
+  // ============================================================================
+  // Material Properties Helper Class
+  // ============================================================================
+
   class MaterialProperties
   {
     public:
@@ -564,45 +660,15 @@ namespace AMGElastic
   };
 
 
+  // ============================================================================
+  // DEPRECATED: Legacy dataset generation (use generate_amg_data instead)
+  // ============================================================================
+
   void generate_dataset(std::ofstream &file, std::string train_flag)
   {
-    
-    // samples (4800 = 1 × 2 × 12 × 50 × 4)  Stokes train dataset
-    std::vector<double> E_values;
-    std::cout<<"train flag: "<<train_flag<<std::endl;
-    if (train_flag == "train")
-      E_values = {2.5, 2.5e2, 2.5e4, 2.5e6};
-    else
-      E_values = {2.5e7};
-
-    const std::vector<double> nu_values = {0.25, 0.3, 0.35};
-    
-    const std::vector<double> theta_values = ElasticProblem<2>::linspace(0.02, 0.9, 50); 
-    
-    unsigned int sample_index = 0;
-    
-    // Traverse
-    for (double E: E_values)
-    {
-      for (double nu : nu_values)
-      {
-        MaterialProperties material(E, nu);
-
-        for (double theta : theta_values) 
-        {         
-          
-            ElasticProblem<2> solver(material.get_lambda(), material.get_mu());
-            solver.set_theta(theta);
-            solver.run(file);
-            sample_index += 8;
-            
-            // if (sample_index % 100 == 0) {
-            std::cout << "Generated " << sample_index << "/4800 samples" << std::endl;
-            // }
-          
-        }        
-      }
-    }           
+    std::cerr << "ERROR: generate_dataset() is deprecated." << std::endl;
+    std::cerr << "Please use the unified generator: ./generate_amg_data -p E -s train -f all -c medium" << std::endl;
+    throw std::runtime_error("Deprecated function called. Use unified generator instead.");
   }
 
 } // namespace AMGElastic

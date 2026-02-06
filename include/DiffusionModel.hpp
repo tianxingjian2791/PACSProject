@@ -45,22 +45,13 @@ namespace AMGDiffusion
 {
   using namespace dealii;
 
-  // Define 4 modes
-  enum class DiffusionPattern
-  {
-    vertical_stripes,    // (a) 
-    vertical_stripes2,  // (b)
-    checkerboard2,        // (c)
-    checkerboard       // (d)
-  };
-
-  // The function of exact solution（Choose according to the mode）
+  // Simplified exact solution (uniform cosine form)
   template <int dim>
   class ExactSolution : public Function<dim>
   {
   public:
-    ExactSolution(DiffusionPattern pattern)
-      : Function<dim>(1), pattern(pattern)
+    ExactSolution()
+      : Function<dim>(1)
     {}
 
     virtual double value(const Point<dim> &p, const unsigned int component = 0) const override
@@ -68,32 +59,17 @@ namespace AMGDiffusion
       (void)component;
       const double x = p[0];
       const double y = p[1];
-
-      switch (pattern)
-      {
-      case DiffusionPattern::vertical_stripes:
-      case DiffusionPattern::vertical_stripes2:
-        return std::cos(M_PI * x) * std::cos(M_PI * y);
-      case DiffusionPattern::checkerboard2:
-      case DiffusionPattern::checkerboard:
-        return std::cos(2 * M_PI * x) * std::cos(2 * M_PI * y);
-      default:
-        AssertThrow(false, ExcNotImplemented());
-        return 0;
-      }
+      return std::cos(M_PI * x) * std::cos(M_PI * y);
     }
-
-  private:
-    DiffusionPattern pattern;
   };
 
-  // THe right handside function（Choose by the mode）
+  // Simplified right-hand side function
   template <int dim>
   class RightHandSide : public Function<dim>
   {
   public:
-    RightHandSide(DiffusionPattern pattern)
-      : Function<dim>(1), pattern(pattern)
+    RightHandSide()
+      : Function<dim>(1)
     {}
 
     virtual double value(const Point<dim> &p, const unsigned int component = 0) const override
@@ -101,102 +77,29 @@ namespace AMGDiffusion
       (void)component;
       const double x = p[0];
       const double y = p[1];
-      double u_value;
-
-      switch (pattern)
-      {
-      case DiffusionPattern::vertical_stripes:
-      case DiffusionPattern::checkerboard:
-        u_value = std::cos(M_PI * x) * std::cos(M_PI * y);
-        return 2 * M_PI * M_PI * u_value; // -Δu = 2π²u
-      case DiffusionPattern::vertical_stripes2:
-      case DiffusionPattern::checkerboard2:
-        u_value = std::cos(2 * M_PI * x) * std::cos(2 * M_PI * y);
-        return 8 * M_PI * M_PI * u_value; // -Δu = 8π²u
-      default:
-        AssertThrow(false, ExcNotImplemented());
-        return 0;
-      }
+      const double u_value = std::cos(M_PI * x) * std::cos(M_PI * y);
+      return 2 * M_PI * M_PI * u_value; // -Δu = 2π²u
     }
-
-  private:
-    DiffusionPattern pattern;
   };
 
-  // The function for different diffusion coefficients
+  // Simplified uniform diffusion coefficient
   template <int dim>
   class DiffusionCoefficient : public Function<dim>
   {
   public:
-    DiffusionCoefficient(DiffusionPattern pattern, double epsilon)
-      : Function<dim>(1), pattern(pattern), epsilon(epsilon)
+    DiffusionCoefficient(double epsilon)
+      : Function<dim>(1), epsilon(epsilon)
     {}
 
     virtual double value(const Point<dim> &p, const unsigned int component = 0) const override
     {
       (void)component;
-      const double x = p[0];
-      const double y = p[1];
-      const double tol = 1e-10;
-
-      switch (pattern)
-      {
-      case DiffusionPattern::vertical_stripes: //(a)
-      {
-        // Divide the area in to 2 stripes: (-1, -0.0), [, 1)
-        if (x < -0.0 + tol)
-          return 1.0; // gray stripe
-        else
-          return std::pow(10.0, epsilon); // white stripe
-      }
-        
-      case DiffusionPattern::vertical_stripes2: // (b)
-      {
-        // Divide the area in to 4 stripes: (-1, -0.5), [-0.5, 0), [0, 0.5), [0.5, 1)
-        if (x < -0.5 + tol)
-          return 1.0;  // gray
-        else if (x < 0.0 + tol)
-          return std::pow(10.0, epsilon);  // white
-        else if (x < 0.5 + tol)
-          return 1.0;  // gray
-        else
-          return std::pow(10.0, epsilon);  // white
-      }
-
-      case DiffusionPattern::checkerboard2: // 4 x 4 checkerboard (c)
-      {
-        int i = static_cast<int>(std::floor((x + 1.0) / 0.5));
-        int j = static_cast<int>(std::floor((y + 1.0) / 0.5));
-        i = std::min(i, 3);
-        j = std::min(j, 3);
-
-        if ((i + j) % 2 == 0)
-          return 1.0;  // gray
-        else
-          return std::pow(10.0, epsilon);  //white
-      }
-
-      case DiffusionPattern::checkerboard: // 2 x 2 checkerboard (d)
-      {
-        int i = static_cast<int>(std::floor(x + 1.0));
-        int j = static_cast<int>(std::floor(y + 1.0));
-        i = std::min(i, 1);
-        j = std::min(j, 1);
-
-        if ((i + j) % 2 == 0)
-          return 1.0;  // gray
-        else
-          return std::pow(10.0, epsilon);  // white
-      }
-
-      default:
-        AssertThrow(false, ExcNotImplemented());
-        return 0;
-      }
+      (void)p;
+      // Uniform diffusion coefficient everywhere
+      return std::pow(10.0, epsilon);
     }
 
   private:
-    DiffusionPattern pattern;
     double epsilon;
   };
 
@@ -213,8 +116,7 @@ namespace AMGDiffusion
   class Solver
   {
   public:
-    Solver(DiffusionPattern pattern, double epsilon, unsigned int refinement);
-    void set_pattern(DiffusionPattern pattern);
+    Solver(double epsilon, unsigned int refinement);
     void set_theta(double theta);
     void set_epsilon(double epsilon);
     void set_refinement(unsigned int refinement);
@@ -222,9 +124,13 @@ namespace AMGDiffusion
     void run(std::ofstream &file);
     void run(std::ofstream &file, OutputFormat format);
 
+    // Getter methods for unified interface
+    AMGOperators::CSRMatrix get_system_matrix_csr();
+    double get_mesh_size() const;
+    double get_convergence_factor() const;
 
     // support static function
-    static std::vector<double> linspace(double start, double end, size_t num_points) 
+    static std::vector<double> linspace(double start, double end, size_t num_points)
     {
       std::vector<double> result;
       if (num_points == 0) return result;
@@ -232,7 +138,7 @@ namespace AMGDiffusion
           result.push_back(start);
           return result;
       }
-      
+
       double step = (end - start) / (num_points - 1);
       for (size_t i = 0; i < num_points; i++) {
           result.push_back(start + i * step);
@@ -252,13 +158,16 @@ namespace AMGDiffusion
 
 
     // mode parameter
-    DiffusionPattern pattern;
     double theta;
     double epsilon;
     unsigned int refinement;
     OutputFormat output_format;
 
-    // Grids and finite elements 
+    // Convergence metrics (to be stored after solve)
+    double convergence_factor;
+    double mesh_size_h;
+
+    // Grids and finite elements
     dealii::Triangulation<dim> triangulation;
     dealii::FE_Q<dim> fe;
     dealii::DoFHandler<dim> dof_handler;
@@ -278,32 +187,30 @@ namespace AMGDiffusion
   };
 
   template <int dim>
-  Solver<dim>::Solver(DiffusionPattern pattern, double epsilon, unsigned int refinement)
-    : pattern(pattern)
-    , epsilon(epsilon)
+  Solver<dim>::Solver(double epsilon, unsigned int refinement)
+    : epsilon(epsilon)
     , refinement(refinement)
     , fe(1) // Q1 FE
     , dof_handler(triangulation)
     , solver_control(1000, 1e-12) // max iterations is 1000，tolerance is 1e-12
-    , exact_solution(pattern)
-    , right_hand_side(pattern)
-    , diffusion_coefficient(pattern, epsilon)
+    , convergence_factor(1.0)
+    , mesh_size_h(0.0)
+    , exact_solution()
+    , right_hand_side()
+    , diffusion_coefficient(epsilon)
     , output_format(OutputFormat::THETA_GNN) // default format
   {}
 
   template <int dim>
   void Solver<dim>::make_grid()
   {
-    // Generate square grids 
+    // Generate square grids
     GridGenerator::hyper_cube(triangulation, -1.0, 1.0);
     triangulation.refine_global(refinement);
-    // std::cout << "Number of active cells: " << triangulation.n_active_cells() << std::endl;
-  }
 
-  template <int dim>
-  void Solver<dim>::set_pattern(DiffusionPattern pattern)
-  {
-    this->pattern = pattern;
+    // Compute mesh size (diameter of largest cell)
+    mesh_size_h = GridTools::maximal_cell_diameter(triangulation);
+    // std::cout << "Number of active cells: " << triangulation.n_active_cells() << std::endl;
   }
 
   template <int dim>
@@ -473,8 +380,13 @@ namespace AMGDiffusion
     // ρ = (||r_k|| / ||r_0||)^{1/k}
     const double rho = (k > 0) ? std::pow(final_r_norm / init_r_norm, 1.0 / k) : 0.0;
     double h = triangulation.begin_active()->diameter(); // The size of grids
+
+    // Store for getter methods
+    convergence_factor = rho;
+    // mesh_size_h already set in make_grid()
+
     write_matrix_to_csv(system_matrix, file, rho, h);
-    
+
 
     // Apply the constraints
     constraints.distribute(solution);
@@ -732,73 +644,38 @@ namespace AMGDiffusion
 
   }
 
+  /**
+   * Getter methods for unified interface
+   */
+  template <int dim>
+  AMGOperators::CSRMatrix Solver<dim>::get_system_matrix_csr()
+  {
+    return petsc_to_csr(system_matrix);
+  }
+
+  template <int dim>
+  double Solver<dim>::get_mesh_size() const
+  {
+    return mesh_size_h;
+  }
+
+  template <int dim>
+  double Solver<dim>::get_convergence_factor() const
+  {
+    return convergence_factor;
+  }
+
+  /**
+   * Generate complete dataset (LEGACY - deprecated, will be removed)
+   * NOTE: This function is no longer maintained after DiffusionPattern removal.
+   * Use the new unified generator in src/generate_amg_data.cpp instead.
+   */
   void generate_dataset(std::ofstream &file, std::string train_flag)
   {
-    //(4800 samples = 4 modes × 12ε × 25θ × 8 grids)
-    const std::array<DiffusionPattern, 4> patterns = 
-    {{
-      DiffusionPattern::vertical_stripes,
-      DiffusionPattern::vertical_stripes2,
-      DiffusionPattern::checkerboard2,
-      DiffusionPattern::checkerboard
-    }};
-  
-    std::vector<double> epsilon_values;
-    if (train_flag == "train") 
-      // Solver<2>::linspace(0.0, 9.5, 40); // dataset2
-      epsilon_values = Solver<2>::linspace(0.0, 9.5, 12); // dataset1
-    else
-      epsilon_values = {1.0, 2.0, 3.0};
-    
-    const std::vector<double> theta_values = 
-        // Solver<2>::linspace(0.02, 0.9, 45); // dataset2
-        Solver<2>::linspace(0.02, 0.9, 25); // dataset1
-
-    std::vector<unsigned int> refinements = {3, 4, 5, 6};
-
-    // if (train_flag == "train")
-    //   refinements = {3, 4, 5, 6}; // dataset: train
-    // else
-    //   refinements = {7}; // dataset: test
-
-    
-    unsigned int sample_index = 0;
-    
-    // Traverse all the combinations of different parameters
-    for (auto pattern : patterns) {
-
-        // set_pattern(pattern);
-        switch (pattern)
-        {
-        case DiffusionPattern::vertical_stripes: std::cout<<"vertical_stripes"<<std::endl; break;
-        case DiffusionPattern::vertical_stripes2: std::cout<<"vertical_stripes2"<<std::endl; break;
-        case DiffusionPattern::checkerboard2: std::cout<<"checkerboard2"<<std::endl; break;
-        case DiffusionPattern::checkerboard: std::cout<<"checkerboard"<<std::endl; break;
-        }
-        
-        
-        for (double epsilon : epsilon_values) {
-        // set_epsilon(epsilon);
-        
-          for (unsigned int refinement : refinements) {
-               
-              for (double theta : theta_values) 
-              {
-                Solver<2> solver(pattern, epsilon, refinement);
-                // std::cout<<"theta to be set: "<<theta<<std::endl;
-                solver.set_theta(theta);
-                solver.run(file);
-                sample_index++;
-                
-                // if (sample_index % 100 == 0) {
-                // if (sample_index) {
-                std::cout << "Generated " << sample_index << "/4800 samples" << std::endl;
-                // }
-              }
-          }
-        }
-    }
-    std::cout << "Dataset generation complete. Total samples: " << sample_index << std::endl;    
+    std::cerr << "ERROR: generate_dataset() is deprecated." << std::endl;
+    std::cerr << "This function used DiffusionPattern which has been removed." << std::endl;
+    std::cerr << "Please use the unified generator: ./generate_amg_data" << std::endl;
+    throw std::runtime_error("Deprecated function called");
   }
 
 } // namespace AMGTest

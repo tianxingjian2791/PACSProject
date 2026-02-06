@@ -34,9 +34,11 @@ def parse_args():
     parser.add_argument('--dataset', type=str, required=True,
                       help='Dataset directory')
     parser.add_argument('--train-file', type=str, default='train_D.csv',
-                      help='Training CSV filename')
+                      help='Training CSV filename (or problem type for NPY)')
     parser.add_argument('--test-file', type=str, default='test_D.csv',
-                      help='Test CSV filename')
+                      help='Test CSV filename (or problem type for NPY)')
+    parser.add_argument('--use-npy', action='store_true',
+                      help='Use NPY/NPZ format instead of CSV (5× faster)')
 
     # Stage 1 training
     parser.add_argument('--epochs-stage1', type=int, default=50,
@@ -122,6 +124,7 @@ def main():
             dataset=args.dataset,
             train_file=args.train_file,
             test_file=args.test_file,
+            use_npy=args.use_npy,
             epochs=args.epochs_stage1,
             batch_size=args.batch_size_stage1,
             lr=args.lr_stage1,
@@ -170,6 +173,7 @@ def main():
         dataset=args.dataset,
         train_file=args.train_file,
         test_file=args.test_file,
+        use_npy=args.use_npy,
         epochs=args.epochs_stage2,
         batch_size=args.batch_size_stage2,
         lr=args.lr_stage2,
@@ -235,7 +239,6 @@ def main():
 
 def train_stage1_with_args(args):
     """Train Stage 1 with given arguments"""
-    from data import create_theta_data_loaders
     from model import CNNModel, GNNModel, cnn_train, cnn_test, gnn_train, gnn_test
     from utils import Checkpointer, MetricsLogger, EarlyStopping, count_parameters, get_device
     import torch.optim as optim
@@ -246,6 +249,8 @@ def train_stage1_with_args(args):
 
     # Create dataloaders
     print(f"\nLoading data from {args.dataset}...")
+    print(f"Format: {'NPY/NPZ (high-performance)' if args.use_npy else 'CSV'}")
+
     if args.model == 'CNN':
         from data.cnn_data_processing import CSVDataset
         from torch.utils.data import DataLoader
@@ -259,13 +264,27 @@ def train_stage1_with_args(args):
         train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
         test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     else:  # GNN
-        train_loader, test_loader = create_theta_data_loaders(
-            data_dir=args.dataset,
-            train_file=args.train_file,
-            test_file=args.test_file,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers
-        )
+        if args.use_npy:
+            from data import create_theta_data_loaders_npy
+            # Extract problem type from filename (e.g., 'train_D.csv' -> 'train_D')
+            train_problem = args.train_file.replace('.csv', '')
+            test_problem = args.test_file.replace('.csv', '')
+            train_loader, test_loader = create_theta_data_loaders_npy(
+                dataset_root=args.dataset,
+                train_problem=train_problem,
+                test_problem=test_problem,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers
+            )
+        else:
+            from data import create_theta_data_loaders
+            train_loader, test_loader = create_theta_data_loaders(
+                data_dir=args.dataset,
+                train_file=args.train_file,
+                test_file=args.test_file,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers
+            )
 
     print(f"Training samples: {len(train_loader.dataset)}")
     print(f"Test samples: {len(test_loader.dataset)}")
@@ -329,7 +348,6 @@ def train_stage1_with_args(args):
 
 def train_stage2_with_args(args):
     """Train Stage 2 with given arguments"""
-    from data import create_p_value_data_loaders
     from model import EncodeProcessDecode
     from utils import Checkpointer, MetricsLogger, EarlyStopping, count_parameters, get_device
     import torch.optim as optim
@@ -341,15 +359,31 @@ def train_stage2_with_args(args):
 
     # Load data
     print(f"\nLoading P-value data from {args.dataset}...")
-    train_loader, test_loader = create_p_value_data_loaders(
-        data_dir=args.dataset,
-        train_file=args.train_file,
-        test_file=args.test_file,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        node_indicators=True,
-        edge_indicators=True
-    )
+    print(f"Format: {'NPY/NPZ (high-performance)' if args.use_npy else 'CSV'}")
+
+    if args.use_npy:
+        from data import create_pvalue_data_loaders_npy
+        # Extract problem type from filename
+        train_problem = args.train_file.replace('.csv', '')
+        test_problem = args.test_file.replace('.csv', '')
+        train_loader, test_loader = create_pvalue_data_loaders_npy(
+            dataset_root=args.dataset,
+            train_problem=train_problem,
+            test_problem=test_problem,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers
+        )
+    else:
+        from data import create_p_value_data_loaders
+        train_loader, test_loader = create_p_value_data_loaders(
+            data_dir=args.dataset,
+            train_file=args.train_file,
+            test_file=args.test_file,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            node_indicators=True,
+            edge_indicators=True
+        )
 
     print(f"Training samples: {len(train_loader.dataset)}")
     print(f"Test samples: {len(test_loader.dataset)}")

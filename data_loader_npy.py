@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import torch
 from torch_geometric.data import Data, Dataset
-from torch.utils.data import Dataset as TorchDataset
 import glob
 
 class GNNThetaDatasetNPY(Dataset):
@@ -89,9 +88,11 @@ class GNNThetaDatasetNPY(Dataset):
         )
 
 
-class PValueDatasetNPY(TorchDataset):
+class PValueDatasetNPY(Dataset):
     """
-    PyTorch Dataset for loading p_value data from NPZ files
+    PyTorch Geometric Dataset for loading p_value data from NPZ files
+
+    Returns PyG Data objects for proper batching support.
 
     Directory structure:
         root/
@@ -107,7 +108,7 @@ class PValueDatasetNPY(TorchDataset):
         - metadata: [n, theta, rho, h]
     """
 
-    def __init__(self, root):
+    def __init__(self, root, transform=None, pre_transform=None):
         self.root = root
         self.sample_files = sorted(glob.glob(os.path.join(root, "sample_*.npz")))
 
@@ -115,56 +116,127 @@ class PValueDatasetNPY(TorchDataset):
             raise ValueError(f"No NPZ files found in {root}")
 
         print(f"Found {len(self.sample_files)} NPZ samples in {root}")
+        super().__init__(root, transform, pre_transform)
 
-    def __len__(self):
+    @property
+    def raw_file_names(self):
+        return [os.path.basename(f) for f in self.sample_files]
+
+    @property
+    def processed_file_names(self):
+        return []  # No processing needed
+
+    def download(self):
+        pass
+
+    def process(self):
+        pass
+
+    def len(self):
         return len(self.sample_files)
 
-    def __getitem__(self, idx):
+    def get(self, idx):
+        """Load individual sample and convert to PyG Data object"""
+        from torch_geometric.data import Data
+        from scipy.sparse import csr_matrix
+
         # Load NPZ file
         npz_file = self.sample_files[idx]
         data = np.load(npz_file)
 
-        # Convert to tensors
-        A_values = torch.from_numpy(data['A_values']).float()
-        A_row_ptr = torch.from_numpy(data['A_row_ptr']).long()
-        A_col_idx = torch.from_numpy(data['A_col_idx']).long()
-
-        coarse_nodes = torch.from_numpy(data['coarse_nodes']).long()
-
-        P_values = torch.from_numpy(data['P_values']).float()
-        P_row_ptr = torch.from_numpy(data['P_row_ptr']).long()
-        P_col_idx = torch.from_numpy(data['P_col_idx']).long()
-
-        S_values = torch.from_numpy(data['S_values']).float()
-        S_row_ptr = torch.from_numpy(data['S_row_ptr']).long()
-        S_col_idx = torch.from_numpy(data['S_col_idx']).long()
-
+        # Parse metadata
         metadata = data['metadata']
         n = int(metadata[0])
         theta = float(metadata[1])
+        rho = float(metadata[2])
+        h = float(metadata[3])
 
-        return {
-            'A_values': A_values,
-            'A_row_ptr': A_row_ptr,
-            'A_col_idx': A_col_idx,
-            'coarse_nodes': coarse_nodes,
-            'P_values': P_values,
-            'P_row_ptr': P_row_ptr,
-            'P_col_idx': P_col_idx,
-            'S_values': S_values,
-            'S_row_ptr': S_row_ptr,
-            'S_col_idx': S_col_idx,
-            'n': n,
-            'theta': theta
-        }
+        # Reconstruct CSR matrix A
+        A = csr_matrix(
+            (data['A_values'], data['A_col_idx'], data['A_row_ptr']),
+            shape=(n, n)
+        )
+
+        # Convert A to COO for edge_index
+        A_coo = A.tocoo()
+        edge_index = torch.tensor(
+            np.vstack([A_coo.row, A_coo.col]),
+            dtype=torch.long
+        )
+        edge_attr = torch.tensor(A_coo.data, dtype=torch.float32).view(-1, 1)
+
+        # Coarse nodes
+        coarse_nodes = torch.from_numpy(data['coarse_nodes']).long()
+
+        # Create node features (coarse/fine indicators)
+        coarse_indicator = torch.zeros(n, dtype=torch.float32)
+        coarse_indicator[coarse_nodes] = 1.0
+        fine_indicator = 1.0 - coarse_indicator
+        x = torch.stack([coarse_indicator, fine_indicator], dim=1)
+
+        # Reconstruct baseline P matrix for edge indicators
+        P = csr_matrix(
+            (data['P_values'], data['P_col_idx'], data['P_row_ptr']),
+            shape=(n, len(coarse_nodes))
+        )
+        P_coo = P.tocoo()
+        baseline_edges = set(zip(P_coo.row, P_coo.col))
+
+        # Add edge indicators (in baseline / not in baseline)
+        edge_in_baseline = []
+        edge_not_in_baseline = []
+        for i in range(len(A_coo.row)):
+            # Note: baseline P edges are different from A edges
+            # For now, just use zeros as placeholders
+            edge_in_baseline.append(0.0)
+            edge_not_in_baseline.append(1.0)
+
+        edge_attr_full = torch.tensor(
+            np.column_stack([A_coo.data, edge_in_baseline, edge_not_in_baseline]),
+            dtype=torch.float32
+        )
+
+        # Global features (placeholder)
+        u = torch.zeros(1, 128, dtype=torch.float32)
+
+        # Create PyG Data object
+        pyg_data = Data(
+            x=x,
+            edge_index=edge_index,
+            edge_attr=edge_attr_full,
+            u=u,
+            num_nodes=n
+        )
+
+        # Store additional info (not batched)
+        pyg_data.coarse_nodes = coarse_nodes
+        pyg_data.theta = torch.tensor([theta], dtype=torch.float)
+        pyg_data.rho = torch.tensor([rho], dtype=torch.float)
+        pyg_data.log_h = torch.tensor([-np.log2(h)], dtype=torch.float)
+
+        # Store matrices as scipy sparse (accessed separately during training)
+        pyg_data.A_sparse = A
+        pyg_data.baseline_P_sparse = P
+
+        # Reconstruct S matrix
+        S = csr_matrix(
+            (data['S_values'], data['S_col_idx'], data['S_row_ptr']),
+            shape=(n, n)
+        )
+        pyg_data.S_sparse = S
+
+        return pyg_data
 
 
-def create_theta_data_loaders_npy(dataset_root, batch_size=32, num_workers=4):
+def create_theta_data_loaders_npy(dataset_root, train_problem='train_D', test_problem='test_D',
+                                  batch_size=32, num_workers=4):
     """
     Create data loaders for NPY format theta_gnn dataset
 
     Args:
         dataset_root: Path to dataset root (e.g., 'datasets/unified')
+        train_problem: Training problem directory name (e.g., 'train_D', 'train_GL')
+        test_problem: Test problem directory name (e.g., 'test_D', 'test_GL')
         batch_size: Batch size for training
         num_workers: Number of workers for data loading
 
@@ -174,14 +246,14 @@ def create_theta_data_loaders_npy(dataset_root, batch_size=32, num_workers=4):
     from torch_geometric.loader import DataLoader
 
     # Paths to NPY directories
-    train_path = os.path.join(dataset_root, 'train', 'raw', 'theta_gnn_npy', 'train_D')
-    test_path = os.path.join(dataset_root, 'test', 'raw', 'theta_gnn_npy', 'test_D')
+    train_path = os.path.join(dataset_root, 'train', 'raw', 'theta_gnn_npy', train_problem)
+    test_path = os.path.join(dataset_root, 'test', 'raw', 'theta_gnn_npy', test_problem)
 
     # Check if NPY data exists
     if not os.path.exists(train_path):
         raise FileNotFoundError(
             f"NPY data not found at {train_path}\n"
-            "Please run: python convert_csv_to_npy.py <csv_file> theta_gnn"
+            "Please generate NPY data using: ./build/generate_amg_data -p <type> -s train -f theta-gnn -c <scale>"
         )
 
     print(f"Loading NPY datasets from:")
@@ -208,29 +280,32 @@ def create_theta_data_loaders_npy(dataset_root, batch_size=32, num_workers=4):
     return train_loader, test_loader
 
 
-def create_pvalue_data_loaders_npy(dataset_root, batch_size=32, num_workers=4):
+def create_pvalue_data_loaders_npy(dataset_root, train_problem='train_D', test_problem='test_D',
+                                   batch_size=32, num_workers=4):
     """
     Create data loaders for NPY format p_value dataset
 
     Args:
         dataset_root: Path to dataset root (e.g., 'datasets/unified')
+        train_problem: Training problem directory name (e.g., 'train_D', 'train_GL')
+        test_problem: Test problem directory name (e.g., 'test_D', 'test_GL')
         batch_size: Batch size for training
         num_workers: Number of workers for data loading
 
     Returns:
-        train_loader, test_loader
+        train_loader, test_loader (PyG DataLoaders)
     """
-    from torch.utils.data import DataLoader
+    from torch_geometric.loader import DataLoader
 
     # Paths to NPY directories
-    train_path = os.path.join(dataset_root, 'train', 'raw', 'p_value_npy', 'train_D')
-    test_path = os.path.join(dataset_root, 'test', 'raw', 'p_value_npy', 'test_D')
+    train_path = os.path.join(dataset_root, 'train', 'raw', 'p_value_npy', train_problem)
+    test_path = os.path.join(dataset_root, 'test', 'raw', 'p_value_npy', test_problem)
 
     # Check if NPY data exists
     if not os.path.exists(train_path):
         raise FileNotFoundError(
             f"NPY data not found at {train_path}\n"
-            "Please run: python convert_csv_to_npy.py <csv_file> p_value"
+            "Please generate NPY data using: ./build/generate_amg_data -p <type> -s train -f p-value -c <scale>"
         )
 
     print(f"Loading NPY datasets from:")

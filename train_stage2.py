@@ -4,8 +4,20 @@ Stage 2 Training Script: P-Value Prediction
 Trains GNN model to predict prolongation matrix P values with frozen Stage 1.
 
 Usage:
+    # With NPY format (5× faster, recommended)
     python train_stage2.py --stage1-weights weights/stage1/best_model.pt \
-                           --dataset datasets/unified --epochs 100
+                           --dataset datasets/unified \
+                           --train-file train_GL \
+                           --test-file test_GL \
+                           --use-npy \
+                           --epochs 100
+
+    # With CSV format (legacy)
+    python train_stage2.py --stage1-weights weights/stage1/best_model.pt \
+                           --dataset datasets/unified \
+                           --train-file train_D.csv \
+                           --test-file test_D.csv \
+                           --epochs 100
 """
 
 import torch
@@ -45,9 +57,11 @@ def parse_args():
     parser.add_argument('--dataset', type=str, required=True,
                       help='Dataset directory')
     parser.add_argument('--train-file', type=str, default='train_D.csv',
-                      help='Training CSV filename')
+                      help='Training CSV filename (or problem type for NPY)')
     parser.add_argument('--test-file', type=str, default='test_D.csv',
-                      help='Test CSV filename')
+                      help='Test CSV filename (or problem type for NPY)')
+    parser.add_argument('--use-npy', action='store_true',
+                      help='Use NPY/NPZ format instead of CSV (5× faster)')
 
     # Training configuration
     parser.add_argument('--epochs', type=int, default=100,
@@ -202,15 +216,30 @@ def main():
 
     # Create dataloaders
     print("\nLoading data...")
-    train_loader, test_loader = create_p_value_data_loaders(
-        data_dir=args.dataset,
-        train_file=args.train_file,
-        test_file=args.test_file,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        node_indicators=True,
-        edge_indicators=True
-    )
+    print(f"Format: {'NPY/NPZ (high-performance)' if args.use_npy else 'CSV'}")
+
+    if args.use_npy:
+        from data import create_pvalue_data_loaders_npy
+        # Extract problem type from filename (e.g., 'train_D.csv' -> 'train_D')
+        train_problem = args.train_file.replace('.csv', '')
+        test_problem = args.test_file.replace('.csv', '')
+        train_loader, test_loader = create_pvalue_data_loaders_npy(
+            dataset_root=args.dataset,
+            train_problem=train_problem,
+            test_problem=test_problem,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers
+        )
+    else:
+        train_loader, test_loader = create_p_value_data_loaders(
+            data_dir=args.dataset,
+            train_file=args.train_file,
+            test_file=args.test_file,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            node_indicators=True,
+            edge_indicators=True
+        )
 
     print(f"Training samples: {len(train_loader.dataset)}")
     print(f"Test samples: {len(test_loader.dataset)}")

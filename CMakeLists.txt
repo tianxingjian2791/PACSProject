@@ -3,61 +3,75 @@ cmake_minimum_required(VERSION 3.15)
 # Project name
 project(PACSProject LANGUAGES C CXX)
 
-# Include directories
-include_directories(include)
-
+# ============================================================================
 # Find deal.II
+# ============================================================================
 find_package(deal.II 9.5.0
   COMPONENTS PETSc
   HINTS ${deal.II_DIR} ${DEAL_II_DIR} ../dealii-install $ENV{DEAL_II_DIR}
+  REQUIRED
 )
 
-if(NOT deal.II_FOUND)
-  message(FATAL_ERROR "\n"
-    "*** Could not locate a (sufficiently recent) version of deal.II. ***\n\n"
-    "You may want to either pass a flag -DDEAL_II_DIR=/path/to/deal.II to cmake\n"
-    "or set an environment variable \"DEAL_II_DIR\" that contains this path."
-  )
+# ============================================================================
+# Find Eigen3
+# ============================================================================
+set(EIGEN3_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/unified-amg-learning/cpp/external/eigen3")
+if(NOT EXISTS ${EIGEN3_INCLUDE_DIR}/Eigen)
+  message(FATAL_ERROR "Eigen3 not found at ${EIGEN3_INCLUDE_DIR}")
 endif()
+message(STATUS "Found Eigen3: ${EIGEN3_INCLUDE_DIR}")
 
+# ============================================================================
 # Find OpenMP
+# ============================================================================
 find_package(OpenMP REQUIRED)
-if(OpenMP_FOUND)
-    message(STATUS "Found OpenMP: ${OpenMP_CXX_FLAGS}")
+if(OpenMP_CXX_FOUND)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 endif()
 
-# Initialize deal.II cached variables
+# ============================================================================
+# Initialize deal.II
+# ============================================================================
 deal_ii_initialize_cached_variables()
 
-# Target 1: Original main executable
-set(TARGET "PACSProject")
-add_executable(${TARGET} src/main.cpp)
-deal_ii_setup_target(${TARGET})
-target_link_libraries(${TARGET} ${OpenMP_CXX_LIBRARIES})
+# ============================================================================
+# Include directories
+# ============================================================================
+include_directories(include)
+include_directories(${EIGEN3_INCLUDE_DIR})
 
-# Target 2: Test unified data generator (simplified)
-set(TARGET_TEST "generate_unified")
-add_executable(${TARGET_TEST} src/generate_unified_data_test.cpp)
-deal_ii_setup_target(${TARGET_TEST})
-target_link_libraries(${TARGET_TEST} ${OpenMP_CXX_LIBRARIES})
+# ============================================================================
+# Unified AMG Data Generator
+# ============================================================================
+set(TARGET_UNIFIED "generate_amg_data")
+add_executable(${TARGET_UNIFIED} src/generate_amg_data.cpp)
+deal_ii_setup_target(${TARGET_UNIFIED})
+target_link_libraries(${TARGET_UNIFIED} ${OpenMP_CXX_LIBRARIES})
+target_include_directories(${TARGET_UNIFIED} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# Target 3: Production data generator (configurable sizes)
-set(TARGET_PROD "generate_production")
-add_executable(${TARGET_PROD} src/generate_production_data.cpp)
-deal_ii_setup_target(${TARGET_PROD})
-target_link_libraries(${TARGET_PROD} ${OpenMP_CXX_LIBRARIES})
-
-# Target 4: Extra-large data generator (10,000+ samples)
-set(TARGET_XLARGE "generate_xlarge")
-add_executable(${TARGET_XLARGE} src/generate_xlarge_data.cpp)
-deal_ii_setup_target(${TARGET_XLARGE})
-target_link_libraries(${TARGET_XLARGE} ${OpenMP_CXX_LIBRARIES})
-
+# ============================================================================
+# Build summary
+# ============================================================================
+message(STATUS "========================================")
+message(STATUS "Build configured successfully!")
+message(STATUS "========================================")
 message(STATUS "")
-message(STATUS "Configured targets:")
-message(STATUS "  PACSProject - Original data generator")
-message(STATUS "  generate_unified - Test unified generator (4 samples)")
-message(STATUS "  generate_production - Production generator (configurable)")
-message(STATUS "  generate_xlarge - Extra-large generator (10,000+ samples)")
+message(STATUS "Target executables:")
+message(STATUS "  generate_amg_data - Unified AMG data generator")
 message(STATUS "")
+message(STATUS "Supported problem types:")
+message(STATUS "  D  - Diffusion equations (FEM)")
+message(STATUS "  E  - Elastic equations (FEM)")
+message(STATUS "  S  - Stokes equations (FEM)")
+message(STATUS "  GL - Graph Laplacian (random graphs)")
+message(STATUS "  SC - Spectral Clustering (k-NN graphs)")
+message(STATUS "")
+message(STATUS "Libraries:")
+message(STATUS "  Eigen3: ${EIGEN3_INCLUDE_DIR}")
+message(STATUS "  OpenMP: ${OpenMP_CXX_FLAGS}")
+message(STATUS "")
+message(STATUS "Usage example:")
+message(STATUS "  ./generate_amg_data -p D -s train -f all -c medium")
+message(STATUS "")
+message(STATUS "Run './generate_amg_data --help' for full options")
+message(STATUS "========================================")

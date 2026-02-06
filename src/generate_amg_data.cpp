@@ -24,9 +24,10 @@
 #include "../include/DiffusionModel.hpp"
 #include "../include/ElasticModel.hpp"
 #include "../include/StokesModel.hpp"
-#include "../include/GraphLaplacianModel.hpp"
+#include "../include/GraphLaplacianModelEigen.hpp"
 #include "../include/AMGOperators.hpp"
 #include "../include/UnifiedDataGenerator.hpp"
+#include "../include/NPZWriter.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -79,6 +80,7 @@ struct CommandLineArgs {
     int num_threads = 0;  // 0 = auto (OpenMP default)
     int seed = 42;
     bool verbose = false;
+    bool use_npy = true;  // Use NPY/NPZ format instead of CSV (default: true for performance)
 };
 
 // ============================================================================
@@ -377,6 +379,22 @@ private:
                      std::ofstream& theta_gnn_file,
                      std::ofstream& p_value_file);
 
+    // NPZ writing functions (high performance binary format)
+    void write_sample_npz_theta_gnn(const AMGOperators::CSRMatrix& A,
+                                    double h, double theta, double rho,
+                                    const std::string& output_dir,
+                                    int sample_id);
+
+    void write_sample_npz_p_value(const AMGOperators::CSRMatrix& A,
+                                 double h, double theta, double rho,
+                                 const std::string& output_dir,
+                                 int sample_id);
+
+    void write_sample_npz_theta_cnn(const AMGOperators::CSRMatrix& A,
+                                   double h, double theta, double rho,
+                                   const std::string& output_dir,
+                                   int sample_id);
+
     void print_progress(int current, int total,
                        std::chrono::steady_clock::time_point start);
 
@@ -553,6 +571,180 @@ void UnifiedAMGDataGenerator::write_sample(
     }
 }
 
+// ============================================================================
+// NPZ Writing Functions (High Performance Binary Format)
+// ============================================================================
+
+void UnifiedAMGDataGenerator::write_sample_npz_theta_gnn(
+    const AMGOperators::CSRMatrix& A,
+    double h, double theta, double rho,
+    const std::string& output_dir,
+    int sample_id)
+{
+    // Create filename: sample_00000.npz
+    std::ostringstream filename;
+    filename << output_dir << "/sample_" << std::setfill('0') << std::setw(5) << sample_id << ".npz";
+
+    // Convert CSR to COO (edge_index format for PyTorch Geometric)
+    std::vector<int> edge_src, edge_dst;
+    std::vector<double> edge_attr;
+
+    for (int row = 0; row < (int)A.n_rows; ++row) {
+        for (int idx = A.row_ptr[row]; idx < A.row_ptr[row + 1]; ++idx) {
+            int col = A.col_indices[idx];
+            double val = A.values[idx];
+
+            if (row != col) {  // Skip diagonal for GNN (treat as undirected graph)
+                edge_src.push_back(row);
+                edge_dst.push_back(col);
+                edge_attr.push_back(std::abs(val));
+            }
+        }
+    }
+
+    // Create edge_index as 2D array (2, num_edges) - convert to double for NPZ
+    std::vector<double> edge_index_flat;
+    edge_index_flat.reserve(edge_src.size() * 2);
+    for (size_t i = 0; i < edge_src.size(); ++i) {
+        edge_index_flat.push_back(static_cast<double>(edge_src[i]));
+    }
+    for (size_t i = 0; i < edge_dst.size(); ++i) {
+        edge_index_flat.push_back(static_cast<double>(edge_dst[i]));
+    }
+
+    // Create metadata array: [n, rho, h, epsilon=0.0]
+    std::vector<double> metadata = {
+        static_cast<double>(A.n_rows),
+        rho,
+        h,
+        0.0  // epsilon (placeholder, not used for graph problems)
+    };
+
+    std::vector<double> theta_arr = {theta};
+    std::vector<double> y_arr = {rho};  // y = rho for regression
+
+    // Write NPZ file
+    NPZWriter::begin(filename.str());
+
+    if (!edge_src.empty()) {
+        NPZWriter::add_array_2d("edge_index", edge_index_flat, 2, edge_src.size());
+    } else {
+        // Empty graph - write empty arrays
+        std::vector<double> empty_double;
+        NPZWriter::add_array_2d("edge_index", empty_double, 2, 0);
+    }
+
+    NPZWriter::add_array("edge_attr", edge_attr);
+    NPZWriter::add_array("theta", theta_arr);
+    NPZWriter::add_array("y", y_arr);
+    NPZWriter::add_array("metadata", metadata);
+    NPZWriter::finalize();
+}
+
+void UnifiedAMGDataGenerator::write_sample_npz_p_value(
+    const AMGOperators::CSRMatrix& A,
+    double h, double theta, double rho,
+    const std::string& output_dir,
+    int sample_id)
+{
+    // Compute AMG operators
+    std::vector<int> cf_splitting = AMGOperators::classical_cf_splitting(A, theta);
+    AMGOperators::CSRMatrix S = AMGOperators::compute_strength_matrix(A, theta);
+    AMGOperators::CSRMatrix P = AMGOperators::compute_baseline_prolongation(A, cf_splitting);
+
+    // Extract coarse nodes
+    std::vector<int> coarse_nodes;
+    for (int i = 0; i < (int)cf_splitting.size(); ++i) {
+        if (cf_splitting[i] == 1) {  // 1 = coarse point
+            coarse_nodes.push_back(i);
+        }
+    }
+
+    // Create metadata: [n, theta, rho, h]
+    std::vector<double> metadata = {
+        static_cast<double>(A.n_rows),
+        theta,
+        rho,
+        h
+    };
+
+    // Create filename
+    std::ostringstream filename;
+    filename << output_dir << "/sample_" << std::setfill('0') << std::setw(5) << sample_id << ".npz";
+
+    // Write NPZ file
+    NPZWriter::begin(filename.str());
+
+    // A matrix
+    NPZWriter::add_array("A_values", A.values);
+    NPZWriter::add_array("A_row_ptr", reinterpret_cast<const std::vector<int>&>(A.row_ptr));
+    NPZWriter::add_array("A_col_idx", reinterpret_cast<const std::vector<int>&>(A.col_indices));
+
+    // P matrix
+    NPZWriter::add_array("P_values", P.values);
+    NPZWriter::add_array("P_row_ptr", reinterpret_cast<const std::vector<int>&>(P.row_ptr));
+    NPZWriter::add_array("P_col_idx", reinterpret_cast<const std::vector<int>&>(P.col_indices));
+
+    // S matrix
+    NPZWriter::add_array("S_values", S.values);
+    NPZWriter::add_array("S_row_ptr", reinterpret_cast<const std::vector<int>&>(S.row_ptr));
+    NPZWriter::add_array("S_col_idx", reinterpret_cast<const std::vector<int>&>(S.col_indices));
+
+    // Coarse nodes and metadata
+    NPZWriter::add_array("coarse_nodes", coarse_nodes);
+    NPZWriter::add_array("metadata", metadata);
+
+    NPZWriter::finalize();
+}
+
+void UnifiedAMGDataGenerator::write_sample_npz_theta_cnn(
+    const AMGOperators::CSRMatrix& A,
+    double h, double theta, double rho,
+    const std::string& output_dir,
+    int sample_id)
+{
+    // Pool matrix to 50x50
+    std::vector<std::vector<double>> V;
+    std::vector<std::vector<int>> C;
+    int pool_size = 50;
+
+    parallel_pooling_csr(A.values, A.col_indices, A.row_ptr,
+                        A.n_rows, pool_size, PoolingOp::SUM, V, C);
+
+    // Standardize
+    std_normalize(V);
+
+    // Flatten pooled matrix for NPY
+    std::vector<double> pooled_flat;
+    pooled_flat.reserve(pool_size * pool_size);
+    for (int i = 0; i < pool_size; ++i) {
+        for (int j = 0; j < pool_size; ++j) {
+            pooled_flat.push_back(V[i][j]);
+        }
+    }
+
+    // Metadata: [n, rho, h, theta]
+    std::vector<double> metadata = {
+        static_cast<double>(A.n_rows),
+        rho,
+        h,
+        theta
+    };
+
+    std::vector<double> y_arr = {theta};  // y = theta for CNN prediction
+
+    // Create filename
+    std::ostringstream filename;
+    filename << output_dir << "/sample_" << std::setfill('0') << std::setw(5) << sample_id << ".npz";
+
+    // Write NPZ file
+    NPZWriter::begin(filename.str());
+    NPZWriter::add_array_2d("pooled_matrix", pooled_flat, pool_size, pool_size);
+    NPZWriter::add_array("y", y_arr);
+    NPZWriter::add_array("metadata", metadata);
+    NPZWriter::finalize();
+}
+
 void UnifiedAMGDataGenerator::print_progress(
     int current, int total,
     std::chrono::steady_clock::time_point start)
@@ -591,9 +783,6 @@ void UnifiedAMGDataGenerator::print_final_summary(
 void UnifiedAMGDataGenerator::generate_diffusion() {
     FEMScaleConfig config = ConfigFactory::get_diffusion_config(args_.scale, args_.split);
 
-    std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
-    open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
-
     int total = config.total_samples();
     int current = 0;
     auto start_time = std::chrono::steady_clock::now();
@@ -603,20 +792,43 @@ void UnifiedAMGDataGenerator::generate_diffusion() {
     std::cout << "========================================" << std::endl;
     std::cout << "Scale: " << scale_to_string(args_.scale) << std::endl;
     std::cout << "Total samples: " << total << std::endl;
+    std::cout << "Format: " << (args_.use_npy ? "NPZ (binary)" : "CSV (text)") << std::endl;
     std::cout << "========================================\n" << std::endl;
+
+    // Setup output (CSV or NPZ)
+    std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
+    std::string npy_theta_cnn_dir, npy_theta_gnn_dir, npy_p_value_dir;
+
+    if (args_.use_npy) {
+        std::string problem_suffix = problem_type_to_string(args_.problem);
+        std::string split_prefix = (args_.split == DatasetSplit::TRAIN) ? "train" : "test";
+
+        if (args_.format == OutputFormat::THETA_CNN || args_.format == OutputFormat::ALL) {
+            npy_theta_cnn_dir = output_base_ + "theta_cnn_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_theta_cnn_dir);
+        }
+        if (args_.format == OutputFormat::THETA_GNN || args_.format == OutputFormat::ALL) {
+            npy_theta_gnn_dir = output_base_ + "theta_gnn_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_theta_gnn_dir);
+        }
+        if (args_.format == OutputFormat::P_VALUE || args_.format == OutputFormat::ALL) {
+            npy_p_value_dir = output_base_ + "p_value_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_p_value_dir);
+        }
+    } else {
+        open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
 
     // Nested loops over all parameters
     for (double epsilon : config.param1_values) {
         for (unsigned int refinement : config.refinements) {
             for (double theta : config.theta_values) {
-                current++;
-
                 // Create solver (new simplified constructor without pattern)
                 AMGDiffusion::Solver<2> solver(epsilon, refinement);
                 solver.set_theta(theta);
 
                 // Solve (this stores convergence metrics internally)
-                std::ofstream dummy_file;  // Solver needs this but we don't use it
+                std::ofstream dummy_file;
                 solver.run(dummy_file);
 
                 // Extract results using getter methods
@@ -624,10 +836,23 @@ void UnifiedAMGDataGenerator::generate_diffusion() {
                 double h = solver.get_mesh_size();
                 double rho = solver.get_convergence_factor();
 
-                // Write to appropriate formats
-                write_sample(A, h, theta, rho,
-                            theta_cnn_file, theta_gnn_file, p_value_file);
+                // Write sample
+                if (args_.use_npy) {
+                    if (!npy_theta_cnn_dir.empty()) {
+                        write_sample_npz_theta_cnn(A, h, theta, rho, npy_theta_cnn_dir, current);
+                    }
+                    if (!npy_theta_gnn_dir.empty()) {
+                        write_sample_npz_theta_gnn(A, h, theta, rho, npy_theta_gnn_dir, current);
+                    }
+                    if (!npy_p_value_dir.empty()) {
+                        write_sample_npz_p_value(A, h, theta, rho, npy_p_value_dir, current);
+                    }
+                } else {
+                    write_sample(A, h, theta, rho,
+                                theta_cnn_file, theta_gnn_file, p_value_file);
+                }
 
+                current++;
                 if (args_.verbose && current % 100 == 0) {
                     print_progress(current, total, start_time);
                 }
@@ -635,15 +860,14 @@ void UnifiedAMGDataGenerator::generate_diffusion() {
         }
     }
 
-    close_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    if (!args_.use_npy) {
+        close_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
     print_final_summary(current, start_time);
 }
 
 void UnifiedAMGDataGenerator::generate_elastic() {
     FEMScaleConfig config = ConfigFactory::get_elastic_config(args_.scale, args_.split);
-
-    std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
-    open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
 
     int total = config.total_samples();
     int current = 0;
@@ -654,7 +878,32 @@ void UnifiedAMGDataGenerator::generate_elastic() {
     std::cout << "========================================" << std::endl;
     std::cout << "Scale: " << scale_to_string(args_.scale) << std::endl;
     std::cout << "Total samples: " << total << std::endl;
+    std::cout << "Format: " << (args_.use_npy ? "NPZ (binary)" : "CSV (text)") << std::endl;
     std::cout << "========================================\n" << std::endl;
+
+    // Setup output (CSV or NPZ)
+    std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
+    std::string npy_theta_cnn_dir, npy_theta_gnn_dir, npy_p_value_dir;
+
+    if (args_.use_npy) {
+        std::string problem_suffix = problem_type_to_string(args_.problem);
+        std::string split_prefix = (args_.split == DatasetSplit::TRAIN) ? "train" : "test";
+
+        if (args_.format == OutputFormat::THETA_CNN || args_.format == OutputFormat::ALL) {
+            npy_theta_cnn_dir = output_base_ + "theta_cnn_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_theta_cnn_dir);
+        }
+        if (args_.format == OutputFormat::THETA_GNN || args_.format == OutputFormat::ALL) {
+            npy_theta_gnn_dir = output_base_ + "theta_gnn_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_theta_gnn_dir);
+        }
+        if (args_.format == OutputFormat::P_VALUE || args_.format == OutputFormat::ALL) {
+            npy_p_value_dir = output_base_ + "p_value_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_p_value_dir);
+        }
+    } else {
+        open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
 
     // Nested loops over parameters
     for (double E : config.param1_values) {
@@ -664,8 +913,6 @@ void UnifiedAMGDataGenerator::generate_elastic() {
 
             for (unsigned int refinement : config.refinements) {
                 for (double theta : config.theta_values) {
-                    current++;
-
                     // Create solver
                     AMGElastic::ElasticProblem<2> solver(material.get_lambda(), material.get_mu());
                     solver.set_theta(theta);
@@ -680,9 +927,22 @@ void UnifiedAMGDataGenerator::generate_elastic() {
                     double rho = solver.get_convergence_factor();
 
                     // Write sample
-                    write_sample(A, h, theta, rho,
-                                theta_cnn_file, theta_gnn_file, p_value_file);
+                    if (args_.use_npy) {
+                        if (!npy_theta_cnn_dir.empty()) {
+                            write_sample_npz_theta_cnn(A, h, theta, rho, npy_theta_cnn_dir, current);
+                        }
+                        if (!npy_theta_gnn_dir.empty()) {
+                            write_sample_npz_theta_gnn(A, h, theta, rho, npy_theta_gnn_dir, current);
+                        }
+                        if (!npy_p_value_dir.empty()) {
+                            write_sample_npz_p_value(A, h, theta, rho, npy_p_value_dir, current);
+                        }
+                    } else {
+                        write_sample(A, h, theta, rho,
+                                    theta_cnn_file, theta_gnn_file, p_value_file);
+                    }
 
+                    current++;
                     if (args_.verbose && current % 100 == 0) {
                         print_progress(current, total, start_time);
                     }
@@ -691,15 +951,14 @@ void UnifiedAMGDataGenerator::generate_elastic() {
         }
     }
 
-    close_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    if (!args_.use_npy) {
+        close_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
     print_final_summary(current, start_time);
 }
 
 void UnifiedAMGDataGenerator::generate_stokes() {
     FEMScaleConfig config = ConfigFactory::get_stokes_config(args_.scale, args_.split);
-
-    std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
-    open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
 
     int total = config.total_samples();
     int current = 0;
@@ -710,7 +969,32 @@ void UnifiedAMGDataGenerator::generate_stokes() {
     std::cout << "========================================" << std::endl;
     std::cout << "Scale: " << scale_to_string(args_.scale) << std::endl;
     std::cout << "Total samples: " << total << std::endl;
+    std::cout << "Format: " << (args_.use_npy ? "NPZ (binary)" : "CSV (text)") << std::endl;
     std::cout << "========================================\n" << std::endl;
+
+    // Setup output (CSV or NPZ)
+    std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
+    std::string npy_theta_cnn_dir, npy_theta_gnn_dir, npy_p_value_dir;
+
+    if (args_.use_npy) {
+        std::string problem_suffix = problem_type_to_string(args_.problem);
+        std::string split_prefix = (args_.split == DatasetSplit::TRAIN) ? "train" : "test";
+
+        if (args_.format == OutputFormat::THETA_CNN || args_.format == OutputFormat::ALL) {
+            npy_theta_cnn_dir = output_base_ + "theta_cnn_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_theta_cnn_dir);
+        }
+        if (args_.format == OutputFormat::THETA_GNN || args_.format == OutputFormat::ALL) {
+            npy_theta_gnn_dir = output_base_ + "theta_gnn_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_theta_gnn_dir);
+        }
+        if (args_.format == OutputFormat::P_VALUE || args_.format == OutputFormat::ALL) {
+            npy_p_value_dir = output_base_ + "p_value_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_p_value_dir);
+        }
+    } else {
+        open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
 
     unsigned int boundary_choice = 1;  // Fixed boundary condition
 
@@ -720,8 +1004,6 @@ void UnifiedAMGDataGenerator::generate_stokes() {
 
             for (unsigned int refinement : config.refinements) {
                 for (double theta : config.theta_values) {
-                    current++;
-
                     // Create solver
                     AMGStokes::StokesProblem<2> solver(velocity_degree, viscosity, boundary_choice);
                     solver.set_theta(theta);
@@ -738,9 +1020,22 @@ void UnifiedAMGDataGenerator::generate_stokes() {
                     double rho = solver.get_convergence_factor();
 
                     // Write sample
-                    write_sample(A, h, theta, rho,
-                                theta_cnn_file, theta_gnn_file, p_value_file);
+                    if (args_.use_npy) {
+                        if (!npy_theta_cnn_dir.empty()) {
+                            write_sample_npz_theta_cnn(A, h, theta, rho, npy_theta_cnn_dir, current);
+                        }
+                        if (!npy_theta_gnn_dir.empty()) {
+                            write_sample_npz_theta_gnn(A, h, theta, rho, npy_theta_gnn_dir, current);
+                        }
+                        if (!npy_p_value_dir.empty()) {
+                            write_sample_npz_p_value(A, h, theta, rho, npy_p_value_dir, current);
+                        }
+                    } else {
+                        write_sample(A, h, theta, rho,
+                                    theta_cnn_file, theta_gnn_file, p_value_file);
+                    }
 
+                    current++;
                     if (args_.verbose && current % 100 == 0) {
                         print_progress(current, total, start_time);
                     }
@@ -749,15 +1044,14 @@ void UnifiedAMGDataGenerator::generate_stokes() {
         }
     }
 
-    close_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    if (!args_.use_npy) {
+        close_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
     print_final_summary(current, start_time);
 }
 
 void UnifiedAMGDataGenerator::generate_graph_laplacian() {
     GraphScaleConfig config = ConfigFactory::get_graph_laplacian_config(args_.scale, args_.split);
-
-    std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
-    open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
 
     auto start_time = std::chrono::steady_clock::now();
 
@@ -767,7 +1061,33 @@ void UnifiedAMGDataGenerator::generate_graph_laplacian() {
     std::cout << "Scale: " << scale_to_string(args_.scale) << std::endl;
     std::cout << "Total samples: " << config.num_samples << std::endl;
     std::cout << "Nodes per graph: " << config.num_points << std::endl;
+    std::cout << "Format: " << (args_.use_npy ? "NPZ (binary)" : "CSV (text)") << std::endl;
     std::cout << "========================================\n" << std::endl;
+
+    // Setup output (CSV or NPZ)
+    std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
+    std::string npy_theta_cnn_dir, npy_theta_gnn_dir, npy_p_value_dir;
+
+    if (args_.use_npy) {
+        // Create NPZ output directories
+        std::string problem_suffix = problem_type_to_string(args_.problem);
+        std::string split_prefix = (args_.split == DatasetSplit::TRAIN) ? "train" : "test";
+
+        if (args_.format == OutputFormat::THETA_CNN || args_.format == OutputFormat::ALL) {
+            npy_theta_cnn_dir = output_base_ + "theta_cnn_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_theta_cnn_dir);
+        }
+        if (args_.format == OutputFormat::THETA_GNN || args_.format == OutputFormat::ALL) {
+            npy_theta_gnn_dir = output_base_ + "theta_gnn_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_theta_gnn_dir);
+        }
+        if (args_.format == OutputFormat::P_VALUE || args_.format == OutputFormat::ALL) {
+            npy_p_value_dir = output_base_ + "p_value_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_p_value_dir);
+        }
+    } else {
+        open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
 
     // Configure graph generator
     GraphLaplacian::GraphConfig graph_config;
@@ -776,41 +1096,64 @@ void UnifiedAMGDataGenerator::generate_graph_laplacian() {
     graph_config.log_std = 1.0;
     graph_config.seed = args_.seed;
 
-    // Generate samples
+    // Pre-generate all samples in parallel
+    std::vector<AMGOperators::CSRMatrix> matrices(config.num_samples);
+    std::vector<double> thetas(config.num_samples);
+    std::vector<double> rhos(config.num_samples);
+    std::vector<double> hs(config.num_samples);
+
+    #pragma omp parallel for schedule(dynamic) if (args_.num_threads != 1)
     for (int i = 0; i < config.num_samples; ++i) {
         int thread_seed = args_.seed + i;
 
-        GraphLaplacian::GraphLaplacianGenerator generator(graph_config);
+        GraphLaplacian::GraphConfig local_config = graph_config;
+        GraphLaplacian::GraphLaplacianGenerator generator(local_config);
         generator.set_seed(thread_seed);
 
-        // Generate matrix
-        AMGOperators::CSRMatrix A = generator.generate();
+        // Generate matrix and convert to CSR
+        auto eigen_mat = generator.generate();
+        matrices[i] = GraphLaplacian::eigenToCSR(eigen_mat);
 
-        // Compute mesh size
-        double h = GraphLaplacian::compute_mesh_size(A, config.num_points);
+        // Compute metrics (using Eigen matrix)
+        hs[i] = GraphLaplacian::compute_mesh_size(eigen_mat, config.num_points);
+        thetas[i] = GraphLaplacian::find_optimal_theta_for_graph(eigen_mat, rhos[i]);
 
-        // Find optimal theta
-        double rho;
-        double theta = GraphLaplacian::find_optimal_theta_for_graph(A, rho);
-
-        // Write sample
-        write_sample(A, h, theta, rho,
-                    theta_cnn_file, theta_gnn_file, p_value_file);
-
-        if (args_.verbose && (i + 1) % 100 == 0) {
-            print_progress(i + 1, config.num_samples, start_time);
+        #pragma omp critical
+        {
+            if (args_.verbose && (i + 1) % 100 == 0) {
+                print_progress(i + 1, config.num_samples, start_time);
+            }
         }
     }
 
-    close_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    // Write samples (CSV or NPZ)
+    if (args_.use_npy) {
+        // Write NPZ files
+        for (int i = 0; i < config.num_samples; ++i) {
+            if (!npy_theta_cnn_dir.empty()) {
+                write_sample_npz_theta_cnn(matrices[i], hs[i], thetas[i], rhos[i], npy_theta_cnn_dir, i);
+            }
+            if (!npy_theta_gnn_dir.empty()) {
+                write_sample_npz_theta_gnn(matrices[i], hs[i], thetas[i], rhos[i], npy_theta_gnn_dir, i);
+            }
+            if (!npy_p_value_dir.empty()) {
+                write_sample_npz_p_value(matrices[i], hs[i], thetas[i], rhos[i], npy_p_value_dir, i);
+            }
+        }
+    } else {
+        // Write CSV files
+        for (int i = 0; i < config.num_samples; ++i) {
+            write_sample(matrices[i], hs[i], thetas[i], rhos[i],
+                        theta_cnn_file, theta_gnn_file, p_value_file);
+        }
+        close_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
+
     print_final_summary(config.num_samples, start_time);
 }
 
 void UnifiedAMGDataGenerator::generate_spectral_clustering() {
     GraphScaleConfig config = ConfigFactory::get_spectral_clustering_config(args_.scale, args_.split);
-
-    std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
-    open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
 
     auto start_time = std::chrono::steady_clock::now();
 
@@ -820,7 +1163,32 @@ void UnifiedAMGDataGenerator::generate_spectral_clustering() {
     std::cout << "Scale: " << scale_to_string(args_.scale) << std::endl;
     std::cout << "Total samples: " << config.num_samples << std::endl;
     std::cout << "Nodes per graph: " << config.num_points << std::endl;
+    std::cout << "Format: " << (args_.use_npy ? "NPZ (binary)" : "CSV (text)") << std::endl;
     std::cout << "========================================\n" << std::endl;
+
+    // Setup output (CSV or NPZ)
+    std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
+    std::string npy_theta_cnn_dir, npy_theta_gnn_dir, npy_p_value_dir;
+
+    if (args_.use_npy) {
+        std::string problem_suffix = problem_type_to_string(args_.problem);
+        std::string split_prefix = (args_.split == DatasetSplit::TRAIN) ? "train" : "test";
+
+        if (args_.format == OutputFormat::THETA_CNN || args_.format == OutputFormat::ALL) {
+            npy_theta_cnn_dir = output_base_ + "theta_cnn_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_theta_cnn_dir);
+        }
+        if (args_.format == OutputFormat::THETA_GNN || args_.format == OutputFormat::ALL) {
+            npy_theta_gnn_dir = output_base_ + "theta_gnn_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_theta_gnn_dir);
+        }
+        if (args_.format == OutputFormat::P_VALUE || args_.format == OutputFormat::ALL) {
+            npy_p_value_dir = output_base_ + "p_value_npy/" + split_prefix + "_" + problem_suffix;
+            create_directories(npy_p_value_dir);
+        }
+    } else {
+        open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
 
     // Configure graph generator for spectral clustering
     GraphLaplacian::GraphConfig graph_config;
@@ -830,33 +1198,57 @@ void UnifiedAMGDataGenerator::generate_spectral_clustering() {
     graph_config.sigma = 0.1;
     graph_config.seed = args_.seed;
 
-    // Generate samples
+    // Pre-generate all samples in parallel
+    std::vector<AMGOperators::CSRMatrix> matrices(config.num_samples);
+    std::vector<double> thetas(config.num_samples);
+    std::vector<double> rhos(config.num_samples);
+    std::vector<double> hs(config.num_samples);
+
+    #pragma omp parallel for schedule(dynamic) if (args_.num_threads != 1)
     for (int i = 0; i < config.num_samples; ++i) {
         int thread_seed = args_.seed + i;
 
-        GraphLaplacian::GraphLaplacianGenerator generator(graph_config);
+        GraphLaplacian::GraphConfig local_config = graph_config;
+        GraphLaplacian::GraphLaplacianGenerator generator(local_config);
         generator.set_seed(thread_seed);
 
-        // Generate matrix
-        AMGOperators::CSRMatrix A = generator.generate();
+        // Generate matrix and convert to CSR
+        auto eigen_mat = generator.generate();
+        matrices[i] = GraphLaplacian::eigenToCSR(eigen_mat);
 
-        // Compute mesh size
-        double h = GraphLaplacian::compute_mesh_size(A, config.num_points);
+        // Compute metrics (using Eigen matrix)
+        hs[i] = GraphLaplacian::compute_mesh_size(eigen_mat, config.num_points);
+        thetas[i] = GraphLaplacian::find_optimal_theta_for_graph(eigen_mat, rhos[i]);
 
-        // Find optimal theta
-        double rho;
-        double theta = GraphLaplacian::find_optimal_theta_for_graph(A, rho);
-
-        // Write sample
-        write_sample(A, h, theta, rho,
-                    theta_cnn_file, theta_gnn_file, p_value_file);
-
-        if (args_.verbose && (i + 1) % 100 == 0) {
-            print_progress(i + 1, config.num_samples, start_time);
+        #pragma omp critical
+        {
+            if (args_.verbose && (i + 1) % 100 == 0) {
+                print_progress(i + 1, config.num_samples, start_time);
+            }
         }
     }
 
-    close_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    // Write samples (CSV or NPZ)
+    if (args_.use_npy) {
+        for (int i = 0; i < config.num_samples; ++i) {
+            if (!npy_theta_cnn_dir.empty()) {
+                write_sample_npz_theta_cnn(matrices[i], hs[i], thetas[i], rhos[i], npy_theta_cnn_dir, i);
+            }
+            if (!npy_theta_gnn_dir.empty()) {
+                write_sample_npz_theta_gnn(matrices[i], hs[i], thetas[i], rhos[i], npy_theta_gnn_dir, i);
+            }
+            if (!npy_p_value_dir.empty()) {
+                write_sample_npz_p_value(matrices[i], hs[i], thetas[i], rhos[i], npy_p_value_dir, i);
+            }
+        }
+    } else {
+        for (int i = 0; i < config.num_samples; ++i) {
+            write_sample(matrices[i], hs[i], thetas[i], rhos[i],
+                        theta_cnn_file, theta_gnn_file, p_value_file);
+        }
+        close_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
+
     print_final_summary(config.num_samples, start_time);
 }
 
@@ -1072,7 +1464,7 @@ int main(int argc, char* argv[]) {
         UnifiedAMGDataGenerator generator(args);
         generator.generate();
     } catch (const std::exception& e) {
-        std::cerr << "\n❌ Error: " << e.what() << std::endl;
+        std::cerr << "\n Error: " << e.what() << std::endl;
         return 1;
     }
 

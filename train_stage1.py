@@ -41,9 +41,11 @@ def parse_args():
     parser.add_argument('--dataset', type=str, required=True,
                       help='Dataset directory (e.g., datasets/unified)')
     parser.add_argument('--train-file', type=str, default='train_D.csv',
-                      help='Training CSV filename')
+                      help='Training CSV filename (or problem type for NPY)')
     parser.add_argument('--test-file', type=str, default='test_D.csv',
-                      help='Test CSV filename')
+                      help='Test CSV filename (or problem type for NPY)')
+    parser.add_argument('--use-npy', action='store_true',
+                      help='Use NPY/NPZ format instead of CSV (5× faster)')
 
     # Training configuration
     parser.add_argument('--epochs', type=int, default=50,
@@ -108,9 +110,10 @@ def create_model(args, device):
 def create_dataloaders(args):
     """Create train and test dataloaders"""
     print("\nLoading data...")
+    print(f"Format: {'NPY/NPZ (high-performance)' if args.use_npy else 'CSV'}")
 
     if args.model == 'CNN':
-        # CNN uses regular CSV format
+        # CNN uses regular CSV format (NPY not implemented for CNN yet)
         from data import create_dataloaders as create_cnn_loaders
 
         train_path = os.path.join(args.dataset, 'train', 'raw', 'theta_cnn', args.train_file)
@@ -138,14 +141,28 @@ def create_dataloaders(args):
         )
 
     else:  # GNN
-        # GNN uses graph format
-        train_loader, test_loader = create_theta_data_loaders(
-            data_dir=args.dataset,
-            train_file=args.train_file,
-            test_file=args.test_file,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers
-        )
+        # GNN supports both CSV and NPY formats
+        if args.use_npy:
+            from data import create_theta_data_loaders_npy
+            # Extract problem type from filename (e.g., 'train_D.csv' -> 'train_D')
+            train_problem = args.train_file.replace('.csv', '')
+            test_problem = args.test_file.replace('.csv', '')
+            train_loader, test_loader = create_theta_data_loaders_npy(
+                dataset_root=args.dataset,
+                train_problem=train_problem,
+                test_problem=test_problem,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers
+            )
+        else:
+            from data import create_theta_data_loaders
+            train_loader, test_loader = create_theta_data_loaders(
+                data_dir=args.dataset,
+                train_file=args.train_file,
+                test_file=args.test_file,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers
+            )
 
     print(f"Training samples: {len(train_loader.dataset)}")
     print(f"Test samples: {len(test_loader.dataset)}")

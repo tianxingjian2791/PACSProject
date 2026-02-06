@@ -255,6 +255,11 @@ namespace AMGStokes
     void set_init_refinement(unsigned int refinement);
     void set_n_cycle(unsigned int n_cycle);
 
+    // Getter methods for unified interface
+    AMGOperators::CSRMatrix get_system_matrix_csr();
+    double get_mesh_size() const;
+    double get_convergence_factor() const;
+
     static std::vector<double> linspace(double start, double end, size_t num_points) 
     {
       std::vector<double> result;
@@ -279,6 +284,7 @@ namespace AMGStokes
     void refine_grid();
     // void output_results(const unsigned int cycle) const;
     void write_matrix_to_csv(const LA::MPI::BlockSparseMatrix &matrix, std::ofstream &file, double rho, double h);
+    AMGOperators::CSRMatrix petsc_to_csr(const LA::MPI::BlockSparseMatrix &matrix);
 
     unsigned int velocity_degree;
     double       viscosity;
@@ -286,6 +292,11 @@ namespace AMGStokes
     unsigned int init_refinement = 2;
     unsigned int n_cycle = 4;
     unsigned int boundary_choice;
+
+    // Convergence metrics (stored after solve)
+    double convergence_factor;
+    double mesh_size_h;
+
     MPI_Comm     mpi_communicator;
 
     FESystem<dim>                             fe;
@@ -683,6 +694,11 @@ namespace AMGStokes
     // ρ = (||r_k|| / ||r_0||)^{1/k}
     const double rho = (k > 0) ? std::pow(final_r_norm / init_r_norm, 1.0 / k) : 0.0;
     double h = triangulation.begin_active()->diameter(); // The size of grids
+
+    // Store convergence metrics for getter methods
+    convergence_factor = rho;
+    mesh_size_h = h;
+
     write_matrix_to_csv(system_matrix, file, rho, h);
 
     // pcout << "   Solved in " << solver_control.last_step() << " iterations."
@@ -902,51 +918,96 @@ namespace AMGStokes
   }
 
 
+  // ============================================================================
+  // Getter Method Implementations
+  // ============================================================================
+
+  template <int dim>
+  AMGOperators::CSRMatrix StokesProblem<dim>::get_system_matrix_csr()
+  {
+    return petsc_to_csr(system_matrix);
+  }
+
+  template <int dim>
+  double StokesProblem<dim>::get_mesh_size() const
+  {
+    return mesh_size_h;
+  }
+
+  template <int dim>
+  double StokesProblem<dim>::get_convergence_factor() const
+  {
+    return convergence_factor;
+  }
+
+  // ============================================================================
+  // PETSc Block Matrix to CSR Conversion
+  // ============================================================================
+
+  template <int dim>
+  AMGOperators::CSRMatrix StokesProblem<dim>::petsc_to_csr(const LA::MPI::BlockSparseMatrix &matrix)
+  {
+    // For Stokes, we extract the velocity block (0,0) as the main system matrix
+    // This is the block that uses AMG preconditioner
+    const auto &A_block = matrix.block(0, 0);
+
+    const unsigned int m = A_block.m();
+    const unsigned int n = A_block.n();
+
+    PetscInt start, end;
+    MatGetOwnershipRange(A_block, &start, &end);
+
+    std::vector<PetscInt> row_ptr;
+    std::vector<PetscInt> col_ind;
+    std::vector<PetscScalar> values;
+
+    PetscInt idx = 0;
+    for (PetscInt i = start; i < end; i++) {
+      PetscInt ncols;
+      const PetscInt* cols;
+      const PetscScalar* vals;
+      MatGetRow(A_block, i, &ncols, &cols, &vals);
+
+      row_ptr.push_back(idx);
+      double zero_tol = 1e-12;
+      for (PetscInt j = 0; j < ncols; j++) {
+        if (std::abs(vals[j]) > zero_tol) {
+          col_ind.push_back(cols[j]);
+          values.push_back(vals[j]);
+          idx++;
+        }
+      }
+      MatRestoreRow(A_block, i, &ncols, &cols, &vals);
+    }
+    row_ptr.push_back(idx);
+
+    // Build CSRMatrix
+    AMGOperators::CSRMatrix A;
+    A.n_rows = m;
+    A.n_cols = n;
+    A.row_ptr.resize(row_ptr.size());
+    A.col_indices.resize(col_ind.size());
+    A.values.resize(values.size());
+
+    for (size_t i = 0; i < row_ptr.size(); ++i)
+      A.row_ptr[i] = row_ptr[i];
+    for (size_t i = 0; i < col_ind.size(); ++i)
+      A.col_indices[i] = col_ind[i];
+    for (size_t i = 0; i < values.size(); ++i)
+      A.values[i] = values[i];
+
+    return A;
+  }
+
+  // ============================================================================
+  // DEPRECATED: Legacy dataset generation (use generate_amg_data instead)
+  // ============================================================================
+
   void generate_dataset(std::ofstream &file, std::string train_flag)
   {
-    
-    // samples (4800 = 1 × 2 × 12 × 50 × 4)  Stokes train dataset
-    const std::vector<unsigned int> boundary_choices = {1};
-
-    const std::vector<unsigned int> velocity_degrees = 
-    {2, 3};
-
-    const std::vector<double> viscosity_values = StokesProblem<2>::linspace(0.1, 6.1, 12); 
-    
-    const std::vector<double> theta_values = StokesProblem<2>::linspace(0.02, 0.9, 50); 
-    
-    unsigned int sample_index = 0;
-    
-    // Traverse
-    for (unsigned int boundary_choice: boundary_choices)
-    {
-      for (unsigned int velocity_degree: velocity_degrees)
-      {
-        for (double viscosity : viscosity_values) 
-        {         
-          for (double theta : theta_values) 
-          {
-            StokesProblem<2> solver(velocity_degree, viscosity, boundary_choice);
-            solver.set_theta(theta);
-            if (train_flag == "test")
-            {
-              solver.set_init_refinement(6);  // we use refiment = {6} as a test dataset
-              solver.set_n_cycle(1); 
-            }
-            solver.run(file);
-            if (train_flag == "test")
-              sample_index ++;
-            else
-              sample_index += 4;
-            
-            if (train_flag == "test") 
-              std::cout << "Generated " << sample_index << "/1200 samples" << std::endl;
-            else
-              std::cout << "Generated " << sample_index << "/4800 samples" << std::endl;
-          }
-        }        
-      }
-    }           
+    std::cerr << "ERROR: generate_dataset() is deprecated." << std::endl;
+    std::cerr << "Please use the unified generator: ./generate_amg_data -p S -s train -f all -c medium" << std::endl;
+    throw std::runtime_error("Deprecated function called. Use unified generator instead.");
   }
 
 } // namespace AMGStokes
