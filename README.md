@@ -4,17 +4,6 @@
 
 This project implements a unified deep learning framework for accelerating Algebraic Multigrid (AMG) solvers by predicting optimal coarsening parameters and interpolation operators (or prolongation matrices).
 
-## 🚀 **NEW: High-Performance NPY/NPZ Binary Format (5× Faster!)**
-
-We've implemented **high-performance binary data format** using NumPy's NPY/NPZ format, achieving:
-- ✅ **5× faster data generation** (334 vs 64 samples/s)
-- ✅ **5× faster data loading** (no CSV parsing overhead)
-- ✅ **Smaller file sizes** (binary compression)
-- ✅ **Full pipeline support** (all problem types: D, E, S, GL, SC)
-- ✅ **Production-ready** and tested
-
-**Use NPY/NPZ format for all new work!** See [NPY Binary Format](#-npybinary-format-5-faster) section below.
-
 ---
 
 ## Project Overview
@@ -55,21 +44,20 @@ This project uses **Convolutional Neural Networks (CNNs)** and **Graph Neural Ne
 ```
 PACSProject/
 ├── include/                        # C++ headers
-│   ├── DiffusionModel.hpp         # Diffusion problem (2D/3D)
-│   ├── ElasticModel.hpp           # Elasticity problem
-│   ├── StokesModel.hpp            # Stokes flow problem
-│   ├── AMGOperators.hpp           # AMG algorithms (C/F, P, S)
-│   ├── Pooling.hpp                # CNN pooling operators
-│   ├── NPYWriter.hpp              # NumPy binary format writer
-│   ├── BatchNPYWriter.hpp         # Batch numpy binary format writer
-│   └── NPZWriter.hpp              # NumPy compressed format writer
+│   ├── DiffusionModel.hpp            # Diffusion problem (2D/3D)
+│   ├── ElasticModel.hpp              # Elasticity problem
+│   ├── StokesModel.hpp               # Stokes flow problem
+│   ├── GraphLaplacianModel.hpp       # Graph Laplacian problem
+│   ├── GraphLaplacianModelEigen.hpp  # Eigen implementation
+│   ├── AMGOperators.hpp              # AMG algorithms (C/F, P, S)
+│   ├── Pooling.hpp                   # CNN pooling operators
+│   ├── NPYWriter.hpp                 # NumPy binary format writer
+│   ├── BatchNPYWriter.hpp            # Batch numpy binary format writer
+│   ├── NPZWriter.hpp                 # NumPy compressed format writer
+│   └── UnifiedDataGenerator.hpp
 │
 ├── src/                           # C++ data generation
-│   ├── generate_unified_data.cpp        # Unified datasets
-│   ├── generate_unified_data_test.cpp   # Small test datasets (4 samples)
-│   ├── generate_production_data.cpp     # Production datasets (900 samples)
-│   ├── generate_xlarge_data.cpp         # Large-scale datasets (10,240 samples)
-│   └── main.cpp                         # Main
+│   └── generate_amg_data.cpp     # Main source file to generata data
 
 │
 ├── model/                         # Python neural network models
@@ -91,19 +79,13 @@ PACSProject/
 ├── evaluate.py                    # Model evaluation and metrics
 │
 ├── datasets/                      # Generated datasets
-│   └── unified/
-│       ├── train/raw/
-│       │   ├── theta_gnn/        # Stage 1 data (GNN)
-│       │   ├── theta_cnn/        # Stage 1 data (GNN)
-│       │   └── p_value/          # Stage 2 data (MPNN)
-│       └── test/raw/              # Same structure for test data
 │
 └── weights/                       # Trained model weights
 ```
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -160,8 +142,8 @@ make -j$(nproc)
 
 ```bash
 # Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv path/to/your/venv
+source path/to/your/venv/bin/activate
 
 # Install dependencies
 pip install torch torchvision
@@ -171,14 +153,14 @@ pip install numpy pandas scipy matplotlib tqdm
 
 ---
 
-## 📊 Dataset Generation
+## Dataset Generation
 
 ### Unified Generator
 
-All datasets are generated using the unified `generate_amg_data` executable:
+All datasets are generated using the unified `generate_amg_data` executable in the build folder:
 
 ```bash
-./generate_amg_data [OPTIONS]
+build/generate_amg_data [OPTIONS]
 
 Required Arguments:
   -p, --problem TYPE        Problem type: D|E|S|GL|SC
@@ -194,37 +176,25 @@ Optional Arguments:
   -h, --help                Show help message
 ```
 
-### Problem Types
-
-| Code | Type | Description | Parameters |
-|------|------|-------------|------------|
-| **D** | Diffusion | 2D scalar diffusion PDE | epsilon (diffusion coefficient), refinement |
-| **E** | Elastic | 2D elastic deformation | Young's modulus E, Poisson ratio ν, refinement |
-| **S** | Stokes | 2D Stokes flow | viscosity, velocity degree, refinement |
-| **GL** | Graph Laplacian | Random graph via Delaunay | num_points, graph type, seed |
-| **SC** | Spectral Clustering | k-NN graphs | num_points, k_neighbors, sigma, seed |
-
 ### Output Formats
 
-| Format | Description | Use Case |
-|--------|-------------|----------|
-| **theta-cnn** | Pooled 50×50 matrix images | CNN theta prediction |
-| **theta-gnn** | Sparse CSR graphs | GNN theta prediction |
-| **p-value** | Graphs + C/F splitting + P, S matrices | P-value prediction |
-| **all** | Generate all three formats | Complete training pipeline |
+- **theta-cnn**: CNN-based theta prediction
+- **theta-gnn**: GNN-based theta prediction
+- **p-value**: MPNN-based P-value prediction
+- **all**: Complete training pipeline
 
 ### Dataset Scales
 
 #### FEM Problems (D, E, S)
 
-| Scale | D Samples | E Samples | S Samples | Use Case |
+| Scale | Diffussion | Elasticity | Stokes | Use Case |
 |-------|-----------|-----------|-----------|----------|
 | **small** | 50 | 60 | 60 | Quick testing |
 | **medium** | 450 | 540 | 1,080 | Validation |
 | **large** | 1,200 | 2,500 | 3,000 | Full training |
 | **xlarge** | 2,560 | 4,480 | 7,680 | Production |
 
-#### Graph Problems (GL, SC)
+#### Graph Problems (Graph Laplacian, Spectral Clustering)
 
 | Scale | Samples | Nodes/Graph | Use Case |
 |-------|---------|-------------|----------|
