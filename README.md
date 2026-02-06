@@ -187,7 +187,7 @@ Optional Arguments:
 
 #### FEM Problems (D, E, S)
 
-| Scale | Diffussion | Elasticity | Stokes | Use Case |
+| Scale | Diffussion | Elastic | Stokes | Use Case |
 |-------|-----------|-----------|-----------|----------|
 | **small** | 50 | 60 | 60 | Quick testing |
 | **medium** | 450 | 540 | 1,080 | Validation |
@@ -207,43 +207,24 @@ Optional Arguments:
 
 ```bash
 # Generate small diffusion training set
-./generate_amg_data -p D -s train -f all -c small
+build/generate_amg_data -p D -s train -f all -c small
 
 # Generate xlarge graph Laplacian test set
-./generate_amg_data -p GL -s test -f theta-gnn -c xlarge --threads 16
+build/generate_amg_data -p GL -s test -f theta-gnn -c xlarge --threads 8
 
 # Generate medium elastic training with verbose output
-./generate_amg_data -p E -s train -f p-value -c medium -v
+build/generate_amg_data -p E -s train -f p-value -c medium -v
 
 # Generate all formats for Stokes, large scale
-./generate_amg_data -p S -s train -f all -c large --threads 8
+build/generate_amg_data -p S -s train -f all -c large --threads 8
 
 # Spectral clustering with custom seed
-./generate_amg_data -p SC -s test -f all -c medium --seed 12345
-```
-
-### Output Structure
-
-```
-datasets/unified/
-├── train/raw/
-│   ├── theta_cnn/
-│   │   ├── train_D.csv
-│   │   ├── train_E.csv
-│   │   ├── train_S.csv
-│   │   ├── train_GL.csv
-│   │   └── train_SC.csv
-│   ├── theta_gnn/
-│   │   └── (same structure)
-│   └── p_value/
-│       └── (same structure)
-└── test/raw/
-    └── (same structure as train)
+build/generate_amg_data -p SC -s test -f all -c medium --seed 12345
 ```
 
 ---
 
-## 💾 NPY/NPZ Binary Format (5× Faster!)
+## NPY/NPZ Binary Format (5× Faster!)
 
 ### Overview
 
@@ -593,116 +574,3 @@ find_package(deal.II 9.5.0
   HINTS ${deal.II_DIR} ${DEAL_II_DIR} ~/PACS/dealii-install $ENV{DEAL_II_DIR}
 )
 ```
-
----
-
-## 🎯 Project Achievements
-
-### ✅ Unified Framework
-- Integrated three independent AMG learning projects
-- Two-stage training pipeline (theta → P-value)
-- End-to-end deployment capability
-- Support for 5 problem types: D, E, S, GL, SC
-
-### ✅ High-Performance NPY/NPZ Binary Format
-- **5× faster data generation** (334 vs 64 samples/s)
-- **5× faster data loading** (binary I/O, no CSV parsing)
-- Complete pipeline support (all problem types and stages)
-- Eigen-based graph generation for GL and SC problems
-- Production-ready and fully tested
-
-### ✅ Production-Scale Datasets
-- 10,240+ samples per split
-- Comprehensive parameter space coverage
-- Multiple data formats (CSV legacy, NPZ recommended)
-- All problem types supported
-- Efficient binary storage
-
-### ✅ Complete Implementation
-- C/F splitting (classical Ruge-Stüben)
-- Prolongation matrix (direct interpolation)
-- Strength matrix computation
-- AMG operator learning
-- Graph Laplacian generation with Delaunay triangulation
-- Spectral Clustering with k-NN graphs
-
-### ✅ Efficient Data Management
-- NPZ format for production (5× faster, recommended)
-- CSV format for legacy compatibility
-- PyTorch Geometric integration
-- Memory-efficient binary loading
-- Automatic degree feature computation
-
-### ✅ Comprehensive Testing
-- All training scripts verified with NPY format
-- Small dataset validation
-- Production-scale training ready
-- Complete end-to-end pipeline tested
-- Benchmarking and evaluation tools
-
----
-
-## 📖 References
-
-- **AMG Theory**: Ruge, J. W., & Stüben, K. (1987). Algebraic multigrid
-- **Graph Neural Networks**: Scarselli et al. (2009). The Graph Neural Network Model
-- **PyTorch Geometric**: Fey & Lenssen (2019). Fast Graph Representation Learning
-- **deal.II**: Bangerth et al. (2007). deal.II—A general-purpose object-oriented finite element library
-
----
-
-## 👥 Contributors
-
-PACS Course Project - Accelerating AMG with Deep Learning
-
-## 📄 License
-
-This project is developed for academic purposes as part of the PACS course.
-
----
-
-## 🚀 Next Steps
-
-### Immediate Tasks (Production-Ready)
-
-1. **Generate Large-Scale Datasets** with NPZ format:
-   ```bash
-   for prob in D E S GL SC; do
-       ./build/generate_amg_data -p $prob -s train -f all -c large -t 16
-       ./build/generate_amg_data -p $prob -s test -f all -c large -t 16
-   done
-   ```
-
-2. **Train Production Models** for each problem type:
-   ```bash
-   for prob in train_D train_E train_S train_GL train_SC; do
-       python train_stage1.py \
-           --dataset datasets/unified \
-           --train-file $prob \
-           --test-file test_${prob#train_} \
-           --model GNN \
-           --use-npy \
-           --epochs 100
-   done
-   ```
-
-3. **Evaluate AMG Performance** on benchmark problems:
-   ```bash
-   python evaluate.py --model-path weights/unified/best_model.pt
-   ```
-
-### Future Enhancements
-
-1. **Mixed Problem Training**: Train on combined D+E+S+GL+SC datasets for universal AMG
-2. **Hyperparameter Optimization**: AutoML for optimal model architecture
-3. **Production Deployment**: Integrate trained models into production AMG solvers
-4. **Extended Problem Types**: 3D problems, anisotropic diffusion, etc.
-5. **Performance Benchmarking**: Compare against classical AMG on standard test suites
-
----
-
-**Status**: ✅ **Complete and production-ready with high-performance NPY/NPZ format!**
-
-**Latest Achievement:** Implemented NPY/NPZ binary format achieving **5× speedup** in both data generation and loading. Full pipeline tested and verified for all problem types (D, E, S, GL, SC).
-
-All components implemented, tested, and documented. Ready for large-scale training and deployment with optimized binary data format.
