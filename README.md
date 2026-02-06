@@ -474,38 +474,6 @@ python evaluate.py \
 
 ---
 
-## 📚 Documentation
-
-Comprehensive documentation available:
-
-- **NPY_TRAINING_COMPLETE.md**: Complete NPY/NPZ format guide and usage
-- **NPY_IMPLEMENTATION_SUMMARY.md**: Technical implementation details
-- **XLARGE_DATASET_COMPLETE.md**: Full specs for 10K+ dataset
-- **MIXED_TRAINING_GUIDE.md**: Training on mixed problem types
-- **DATASET_GENERATION_COMPLETE.md**: Complete generation summary
-- **PRODUCTION_DATASETS.md**: Dataset size comparisons
-
----
-
-## 🔧 Advanced Features
-
-### Mixed Dataset Training
-
-Train on multiple problem types simultaneously:
-
-```bash
-# Generate different problem types
-mpirun -np 1 build/generate_xlarge D train --theta-gnn  # Diffusion
-# mpirun -np 1 build/generate_xlarge E train --theta-gnn  # Elastic (future)
-# mpirun -np 1 build/generate_xlarge S train --theta-gnn  # Stokes (future)
-
-# Combine datasets
-cat datasets/.../train_D.csv \
-    datasets/.../train_E.csv \
-    datasets/.../train_S.csv > datasets/mixed/train.csv
-
-# Train on mixed data
-python train_stage1.py --dataset datasets/mixed --epochs 100
 ```
 
 **Benefits**:
