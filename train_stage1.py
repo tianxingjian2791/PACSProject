@@ -113,32 +113,48 @@ def create_dataloaders(args):
     print(f"Format: {'NPY/NPZ (high-performance)' if args.use_npy else 'CSV'}")
 
     if args.model == 'CNN':
-        # CNN uses regular CSV format (NPY not implemented for CNN yet)
-        from data import create_dataloaders as create_cnn_loaders
+        if args.use_npy:
+            # CNN with NPY format (high-performance)
+            from data_loader_npy import create_theta_cnn_data_loaders_npy
 
-        train_path = os.path.join(args.dataset, 'train', 'raw', 'theta_cnn', args.train_file)
-        test_path = os.path.join(args.dataset, 'test', 'raw', 'theta_cnn', args.test_file)
+            # Extract problem type from filename (e.g., 'train_D.csv' -> 'train_D')
+            train_problem = args.train_file.replace('.csv', '')
+            test_problem = args.test_file.replace('.csv', '')
 
-        # For CNN, we need CSVDataset
-        from data.cnn_data_processing import CSVDataset
-        from torch.utils.data import DataLoader
+            train_loader, test_loader = create_theta_cnn_data_loaders_npy(
+                dataset_root=args.dataset,
+                train_problem=train_problem,
+                test_problem=test_problem,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers
+            )
+        else:
+            # CNN with CSV format (legacy)
+            from data import create_dataloaders as create_cnn_loaders
 
-        train_dataset = CSVDataset(train_path)
-        test_dataset = CSVDataset(test_path)
+            train_path = os.path.join(args.dataset, 'train', 'raw', 'theta_cnn', args.train_file)
+            test_path = os.path.join(args.dataset, 'test', 'raw', 'theta_cnn', args.test_file)
 
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=args.batch_size,
-            shuffle=True,
-            num_workers=args.num_workers
-        )
+            # For CNN, we need CSVDataset
+            from data.cnn_data_processing import CSVDataset
+            from torch.utils.data import DataLoader
 
-        test_loader = DataLoader(
-            test_dataset,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=args.num_workers
-        )
+            train_dataset = CSVDataset(train_path)
+            test_dataset = CSVDataset(test_path)
+
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=args.batch_size,
+                shuffle=True,
+                num_workers=args.num_workers
+            )
+
+            test_loader = DataLoader(
+                test_dataset,
+                batch_size=args.batch_size,
+                shuffle=False,
+                num_workers=args.num_workers
+            )
 
     else:  # GNN
         # GNN supports both CSV and NPY formats
