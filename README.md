@@ -361,7 +361,7 @@ datasets/unified/
 
 ---
 
-## 🎓 Training
+## Training
 
 ### Stage 1: Theta Prediction
 
@@ -422,7 +422,7 @@ python train_unified.py \
 
 ---
 
-## 🔬 Evaluation
+## Evaluation
 
 ```bash
 # Evaluate Stage 1 model
