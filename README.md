@@ -44,7 +44,7 @@ This project uses **Convolutional Neural Networks (CNNs)** and **Graph Neural Ne
 ```
 PACSProject/
 ├── include/                        # C++ headers
-│   ├── DiffusionModel.hpp            # Diffusion problem (2D/3D)
+│   ├── DiffusionModel.hpp            # Diffusion problem
 │   ├── ElasticModel.hpp              # Elasticity problem
 │   ├── StokesModel.hpp               # Stokes flow problem
 │   ├── GraphLaplacianModel.hpp       # Graph Laplacian problem
@@ -174,6 +174,7 @@ Optional Arguments:
   --seed SEED               Random seed (default: 42)
   -v, --verbose             Verbose progress output
   -h, --help                Show help message
+  --csv                     Store data in CSV format (default: NPZ format)
 ```
 
 ### Output Formats
@@ -207,61 +208,69 @@ Optional Arguments:
 
 ```bash
 # Generate small diffusion training set
-build/generate_amg_data -p D -s train -f all -c small
+build/generate_amg_data -p D -s train -f all -c small --csv
 
 # Generate xlarge graph Laplacian test set
-build/generate_amg_data -p GL -s test -f theta-gnn -c xlarge --threads 8
+build/generate_amg_data -p GL -s test -f theta-gnn -c xlarge --threads 8 --csv
 
 # Generate medium elastic training with verbose output
-build/generate_amg_data -p E -s train -f p-value -c medium -v
+build/generate_amg_data -p E -s train -f p-value -c medium -v --csv
 
 # Generate all formats for Stokes, large scale
-build/generate_amg_data -p S -s train -f all -c large --threads 8
+build/generate_amg_data -p S -s train -f all -c large --threads 8 --csv
 
 # Spectral clustering with custom seed
-build/generate_amg_data -p SC -s test -f all -c medium --seed 12345
+build/generate_amg_data -p SC -s test -f all -c medium --seed 12345 --csv
+```
+
+### Output Structure
+
+```
+datasets/unified/
+├── train/raw/
+│   ├── theta_cnn/
+│   │   ├── train_D.csv
+│   │   ├── train_E.csv
+│   │   ├── train_S.csv
+│   │   ├── train_GL.csv
+│   │   └── train_SC.csv
+│   ├── theta_gnn/
+│   │   └── (same structure)
+│   └── p_value/
+│       └── (same structure)
+└── test/raw/
+    └── (same structure as train)
 ```
 
 ---
 
-## NPY/NPZ Binary Format (5× Faster!)
+## NPY/NPZ Binary Format
 
 ### Overview
 
 We've implemented **high-performance NPY/NPZ binary format** for both data generation and training, achieving significant performance improvements:
 
-- ✅ **5× faster data generation**: 334 samples/s (NPZ) vs 64 samples/s (CSV)
-- ✅ **5× faster data loading**: Binary I/O eliminates CSV parsing overhead
+- ✅ **Faster data generation**: For Graph Laplacian problem, 334 samples/s (NPZ) vs 64 samples/s (CSV)
+- ✅ **Faster data loading**: Binary I/O eliminates CSV parsing overhead
 - ✅ **Smaller file sizes**: Binary compression reduces storage
 - ✅ **Complete pipeline support**: All problem types (D, E, S, GL, SC) and all stages
-- ✅ **Production-ready**: Fully tested and verified
-
-**Recommendation: Use NPY/NPZ format for all new work!**
 
 ### Data Generation with NPZ
 
 ```bash
 # Generate NPZ data (default, 5× faster)
 ./build/generate_amg_data -p GL -s train -f theta-gnn -c small -t 8
-./build/generate_amg_data -p GL -s test -f theta-gnn -c small -t 8
+./build/generate_amg_data -p GL -s test -f theta-gnn -c small -t 8 
 
 # Generate P-value data for Stage 2
-./build/generate_amg_data -p GL -s train -f p-value -c medium -t 16
-./build/generate_amg_data -p GL -s test -f p-value -c medium -t 16
+./build/generate_amg_data -p GL -s train -f p-value -c medium -t 8
+./build/generate_amg_data -p GL -s test -f p-value -c medium -t 8
 
 # Generate all formats
-./build/generate_amg_data -p D -s train -f all -c large -t 16
+./build/generate_amg_data -p D -s train -f all -c large -t 8
 
 # CSV format (legacy, if needed)
 ./build/generate_amg_data -p GL -s train -f theta-gnn -c small --csv
-```
-
-**Performance Comparison:**
-```bash
-$ ./build/generate_amg_data -p GL -s train -f theta-gnn -c small -t 4
-Total samples: 50
-Total time: 0.17s
-Average rate: 287.94 samples/s  ✅ 5× faster than CSV!
 ```
 
 ### Training with NPY Format
@@ -337,31 +346,6 @@ datasets/unified/
 }
 ```
 
-### Testing NPY Pipeline
-
-```bash
-# Test data loading
-python test_npy_loading.py
-
-# Test Stage 1 training
-python test_npy_training.py
-
-# Test Stage 2 P-value loading
-python test_pvalue_npy.py
-
-# Run complete demo
-./demo_npy_pipeline.sh
-```
-
-### Performance Benefits
-
-| Metric | CSV | NPZ | Speedup |
-|--------|-----|-----|---------|
-| **Generation** | 64 samples/s | 334 samples/s | **5.2×** |
-| **Loading** | Slow (parsing) | Fast (binary) | **5×** |
-| **File Size** | Larger | Smaller | Better compression |
-| **Memory** | Higher | Lower | Memory mapping |
-
 ### Migration from CSV
 
 **Backward Compatibility:**
@@ -374,17 +358,6 @@ python test_pvalue_npy.py
 2. Add `--use-npy` flag to training scripts
 3. Update file paths to use problem types without `.csv`
 
-### Implementation Details
-
-**Key Technical Fixes:**
-- Fixed Eigen::SparseMatrix to use RowMajor storage for proper CSR conversion
-- Type-safe edge index conversion for NPZ compatibility
-- Complete NPZ output for all problem types (D, E, S, GL, SC)
-
-**Documentation:**
-- `NPY_TRAINING_COMPLETE.md` - Complete usage guide
-- `NPY_IMPLEMENTATION_SUMMARY.md` - Technical details
-- Test scripts in project root
 
 ---
 
