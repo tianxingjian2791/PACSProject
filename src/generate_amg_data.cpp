@@ -177,10 +177,10 @@ public:
                 break;
 
             case DatasetScale::LARGE:
-                config.param1_values = linspace(0.0, 9.5, 12);     // epsilon: 12 values
-                config.theta_values = linspace(0.02, 0.9, 25);     // theta: 25 values
-                config.refinements = {3, 4, 5, 6};                  // 4 levels
-                // Total: 12 × 25 × 4 = 1,200 samples
+                config.param1_values = linspace(0.0, 9.5, 18);     // epsilon: 18 values
+                config.theta_values = linspace(0.02, 0.9, 50);     // theta: 50 values
+                config.refinements = {3, 4};                  // 2 levels
+                // Total: 18 × 50 × 2 = 1,800 samples
                 break;
 
             case DatasetScale::XLARGE:
@@ -215,11 +215,11 @@ public:
                 break;
 
             case DatasetScale::LARGE:
-                config.param1_values = {2.5, 2.5e2, 2.5e4, 2.5e6, 2.5e8}; // 5 values
+                config.param1_values = {2.5, 2.5e2, 2.5e4}; // 3 values
                 config.param2_values = {0.20, 0.25, 0.30, 0.35, 0.40};    // 5 values
-                config.theta_values = linspace(0.02, 0.9, 25);      // 25 values
-                config.refinements = {3, 4, 5, 6};                   // 4 levels
-                // Total: 5 × 5 × 25 × 4 = 2,500 samples
+                config.theta_values = linspace(0.02, 0.9, 50);      // 50 values
+                config.refinements = {3, 4};                   // 2 levels
+                // Total: 3 × 5 × 50 × 2 = 1,500 samples
                 break;
 
             case DatasetScale::XLARGE:
@@ -255,11 +255,11 @@ public:
                 break;
 
             case DatasetScale::LARGE:
-                config.param1_values = linspace(0.1, 6.1, 15);      // viscosity: 15 values
-                config.param2_values = {2, 3};                       // velocity_degree: 2 values
-                config.theta_values = linspace(0.02, 0.9, 25);       // theta: 25 values
-                config.refinements = {3, 4, 5, 6};                    // 4 levels
-                // Total: 15 × 2 × 25 × 4 = 3,000 samples
+                config.param1_values = linspace(0.1, 6.1, 18);      // viscosity: 18 values
+                config.param2_values = {2};                       // velocity_degree: 1 values
+                config.theta_values = linspace(0.02, 0.9, 50);       // theta: 50 values
+                config.refinements = {3, 4};                    // 2 levels
+                // Total: 18 × 1 × 50 × 2 = 1,800 samples
                 break;
 
             case DatasetScale::XLARGE:
@@ -289,8 +289,8 @@ public:
                 break;
 
             case DatasetScale::LARGE:
-                config.num_samples = 2000;
-                config.num_points = 256;
+                config.num_samples = 5000;
+                config.num_points = 64;  // Can be set to 256 for having rich computing resources
                 break;
 
             case DatasetScale::XLARGE:
@@ -754,12 +754,20 @@ void UnifiedAMGDataGenerator::print_progress(
     double rate = current / elapsed;
     double eta = (total - current) / rate;
 
+    // Save current cout format state
+    std::ios_base::fmtflags old_flags = std::cout.flags();
+    std::streamsize old_precision = std::cout.precision();
+
     std::cout << "[" << current << "/" << total << "] "
               << std::fixed << std::setprecision(1)
               << (100.0 * current / total) << "% | "
               << "Rate: " << std::setprecision(1) << rate << " samples/s | "
               << "ETA: " << std::setprecision(0) << eta << "s"
               << std::endl;
+
+    // Restore original cout format state
+    std::cout.flags(old_flags);
+    std::cout.precision(old_precision);
 }
 
 void UnifiedAMGDataGenerator::print_final_summary(
@@ -769,8 +777,12 @@ void UnifiedAMGDataGenerator::print_final_summary(
     auto end = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(end - start).count();
 
+    // Save current cout format state
+    std::ios_base::fmtflags old_flags = std::cout.flags();
+    std::streamsize old_precision = std::cout.precision();
+
     std::cout << "\n========================================" << std::endl;
-    std::cout << "✅ Generation complete!" << std::endl;
+    std::cout << "Generation complete!" << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout << "Total samples: " << total << std::endl;
     std::cout << "Total time: " << std::fixed << std::setprecision(2)
@@ -778,6 +790,10 @@ void UnifiedAMGDataGenerator::print_final_summary(
     std::cout << "Average rate: " << std::setprecision(2)
               << (total / elapsed) << " samples/s" << std::endl;
     std::cout << "========================================\n" << std::endl;
+
+    // Restore original cout format state
+    std::cout.flags(old_flags);
+    std::cout.precision(old_precision);
 }
 
 void UnifiedAMGDataGenerator::generate_diffusion() {
@@ -819,8 +835,18 @@ void UnifiedAMGDataGenerator::generate_diffusion() {
         open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
     }
 
+    std::vector<double> param1_values_vec;
+    // For diffusion, we can create a train/test split by using only a subset of epsilon values for training
+    if (args_.split == DatasetSplit::TRAIN) {
+        size_t train_size = static_cast<size_t>(config.param1_values.size() * (2/3.0));  // Use first 2/3 of epsilon values for training
+        param1_values_vec = std::vector<double>(config.param1_values.begin(), config.param1_values.begin() + train_size);
+    } else {
+        size_t test_size = static_cast<size_t>(config.param1_values.size() * (1/3.0));  // Use last 1/3 of epsilon values for testing
+        param1_values_vec = std::vector<double>(config.param1_values.end() - test_size, config.param1_values.end());
+    }
+
     // Nested loops over all parameters
-    for (double epsilon : config.param1_values) {
+    for (double epsilon : param1_values_vec) {
         for (unsigned int refinement : config.refinements) {
             for (double theta : config.theta_values) {
                 // Create solver (new simplified constructor without pattern)
@@ -905,8 +931,18 @@ void UnifiedAMGDataGenerator::generate_elastic() {
         open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
     }
 
+    std::vector<double> param1_values_vec;
+    // We can create a train/test split by using only a subset of epsilon values for training
+    if (args_.split == DatasetSplit::TRAIN) {
+        size_t train_size = static_cast<size_t>(config.param1_values.size() * (2/3.0));  // Use first 2/3 of epsilon values for training
+        param1_values_vec = std::vector<double>(config.param1_values.begin(), config.param1_values.begin() + train_size);
+    } else {
+        size_t test_size = static_cast<size_t>(config.param1_values.size() * (1/3.0));  // Use last 1/3 of epsilon values for testing
+        param1_values_vec = std::vector<double>(config.param1_values.end() - test_size, config.param1_values.end());
+    }    
+
     // Nested loops over parameters
-    for (double E : config.param1_values) {
+    for (double E : param1_values_vec) {
         for (double nu : config.param2_values) {
             // Compute Lamé parameters
             AMGElastic::MaterialProperties material(E, nu);
@@ -998,7 +1034,17 @@ void UnifiedAMGDataGenerator::generate_stokes() {
 
     unsigned int boundary_choice = 1;  // Fixed boundary condition
 
-    for (double viscosity : config.param1_values) {
+    std::vector<double> param1_values_vec;
+    // For diffusion, we can create a train/test split by using only a subset of epsilon values for training
+    if (args_.split == DatasetSplit::TRAIN) {
+        size_t train_size = static_cast<size_t>(config.param1_values.size() * (2/3.0));  // Use first 2/3 of epsilon values for training
+        param1_values_vec = std::vector<double>(config.param1_values.begin(), config.param1_values.begin() + train_size);
+    } else {
+        size_t test_size = static_cast<size_t>(config.param1_values.size() * (1/3.0));  // Use last 1/3 of epsilon values for testing
+        param1_values_vec = std::vector<double>(config.param1_values.end() - test_size, config.param1_values.end());
+    }
+
+    for (double viscosity : param1_values_vec) {
         for (double velocity_degree_double : config.param2_values) {
             unsigned int velocity_degree = static_cast<unsigned int>(velocity_degree_double);
 
@@ -1087,6 +1133,10 @@ void UnifiedAMGDataGenerator::generate_graph_laplacian() {
         }
     } else {
         open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
+
+    if (args_.split == DatasetSplit::TEST) {
+        config.num_points = int(0.2 * config.num_points);  // Smaller graphs for testing
     }
 
     // Configure graph generator
@@ -1188,6 +1238,10 @@ void UnifiedAMGDataGenerator::generate_spectral_clustering() {
         }
     } else {
         open_output_files(theta_cnn_file, theta_gnn_file, p_value_file);
+    }
+
+    if (args_.split == DatasetSplit::TEST) {
+        config.num_points = int(0.2 * config.num_points);  // Smaller graphs for testing
     }
 
     // Configure graph generator for spectral clustering

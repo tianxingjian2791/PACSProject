@@ -34,10 +34,10 @@ namespace AMGOperators
     /**
      * Compute strength of connection matrix
      * Node i is strongly connected to j if: -a_ij >= theta * max_k(-a_ik)
-     *
-     * @param A System matrix in CSR format
-     * @param theta Strong threshold parameter
-     * @return Strength matrix (binary: 1 = strong connection, 0 = weak)
+     * Parameters:
+     *  A - System matrix in CSR format
+     *  theta - Strong threshold parameter
+     *  return - Strength matrix (binary: 1 = strong connection, 0 = weak)
      */
     CSRMatrix compute_strength_matrix(const CSRMatrix& A, double theta)
     {
@@ -99,10 +99,10 @@ namespace AMGOperators
 
     /**
      * Classical Ruge-Stüben C/F splitting
-     *
-     * @param A System matrix in CSR format
-     * @param theta Strong threshold parameter
-     * @return cf_markers: 1 = coarse, 0 = fine
+     * Parameters:
+     *  A - System matrix in CSR format
+     *  theta - Strong threshold parameter
+     *  return - cf_markers: 1 = coarse, 0 = fine
      */
     std::vector<int> classical_cf_splitting(const CSRMatrix& A, double theta)
     {
@@ -189,9 +189,7 @@ namespace AMGOperators
         return result;
     }
 
-    /**
-     * Extract coarse node indices
-     */
+    // Extract coarse node indices   
     std::vector<int> extract_coarse_nodes(const std::vector<int>& cf_markers)
     {
         std::vector<int> coarse_nodes;
@@ -205,10 +203,10 @@ namespace AMGOperators
 
     /**
      * Compute baseline prolongation matrix using direct interpolation
-     *
-     * @param A System matrix in CSR format
-     * @param cf_markers C/F markers (1=coarse, 0=fine)
-     * @return Prolongation matrix P in CSR format
+     * Parameters:
+     *  A - System matrix in CSR format
+     *  cf_markers - C/F markers (1=coarse, 0=fine)
+     *  return - Prolongation matrix P in CSR format
      */
     CSRMatrix compute_baseline_prolongation(const CSRMatrix& A,
                                            const std::vector<int>& cf_markers)
@@ -309,8 +307,7 @@ namespace AMGOperators
      * Compute Gauss-Seidel relaxation matrix
      * S = -(D+L)^{-1} * U
      *
-     * For efficiency, we store only the splitting (D, L, U)
-     * rather than computing the full dense matrix
+     * For efficiency, store only the splitting (D, L, U)
      */
     struct RelaxationMatrices
     {

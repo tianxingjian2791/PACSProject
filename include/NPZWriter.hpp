@@ -12,7 +12,7 @@
 #include "NPYWriter.hpp"
 
 /**
- * @brief Utility for writing NumPy .npz format (zipped collection of .npy files)
+ * Utility for writing NumPy .npz format (zipped collection of .npy files)
  *
  * NPZ format is a ZIP archive containing multiple .npy files.
  * This implementation uses system zip command for simplicity.
@@ -20,10 +20,7 @@
 class NPZWriter
 {
 public:
-    /**
-     * @brief Start a new NPZ file (creates temp directory)
-     * @param filename Output .npz file path
-     */
+     // Start a new NPZ file (creates temp directory)
     static void begin(const std::string &filename)
     {
         current_file = filename;
@@ -34,11 +31,8 @@ public:
         array_files.clear();
     }
 
-    /**
-     * @brief Add a 1D double array to the current NPZ
-     * @param name Array name (without .npy extension)
-     * @param data Vector of doubles
-     */
+    
+    // Add a 1D double array to the current NPZ
     static void add_array(const std::string &name, const std::vector<double> &data)
     {
         std::string filepath = temp_dir + "/" + name + ".npy";
@@ -46,11 +40,7 @@ public:
         array_files.push_back(filepath);
     }
 
-    /**
-     * @brief Add a 1D int array to the current NPZ
-     * @param name Array name (without .npy extension)
-     * @param data Vector of integers
-     */
+    // Add a 1D int array to the current NPZ
     static void add_array(const std::string &name, const std::vector<int> &data)
     {
         std::string filepath = temp_dir + "/" + name + ".npy";
@@ -58,11 +48,7 @@ public:
         array_files.push_back(filepath);
     }
 
-    /**
-     * @brief Add a 1D uint array to the current NPZ
-     * @param name Array name (without .npy extension)
-     * @param data Vector of unsigned integers
-     */
+    // Add a 1D uint array to the current NPZ 
     static void add_array(const std::string &name, const std::vector<unsigned int> &data)
     {
         std::string filepath = temp_dir + "/" + name + ".npy";
@@ -70,13 +56,7 @@ public:
         array_files.push_back(filepath);
     }
 
-    /**
-     * @brief Add a 2D double array to the current NPZ
-     * @param name Array name (without .npy extension)
-     * @param data Flattened 2D array (row-major)
-     * @param rows Number of rows
-     * @param cols Number of columns
-     */
+    // Add a 2D double array to the current NPZ
     static void add_array_2d(const std::string &name, const std::vector<double> &data,
                              size_t rows, size_t cols)
     {
@@ -85,10 +65,7 @@ public:
         array_files.push_back(filepath);
     }
 
-    /**
-     * @brief Finalize and write the NPZ file
-     * Zips all added arrays and cleans up temp files
-     */
+    // Finalize and write the NPZ file (zips temp directory)
     static void finalize()
     {
         if (array_files.empty())
