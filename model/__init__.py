@@ -10,7 +10,6 @@ This package contains neural network models for accelerating Algebraic Multigrid
 """
 
 from .cnn_model import CNNModel, train as cnn_train, test as cnn_test
-from .gat_model import GATModel, train as gat_train, test as gat_test
 from .gnn_model import GNNModel, train as gnn_train, test as gnn_test
 from .graph_net_model import (
     EncodeProcessDecode,

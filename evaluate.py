@@ -203,7 +203,7 @@ def save_results(args, metrics, stats, predictions, targets):
     with open(results_file, 'w') as f:
         json.dump(results, f, indent=2)
 
-    print(f"\n✓ Results saved to: {results_file}")
+    print(f"\nResults saved to: {results_file}")
 
     # Save predictions if requested
     if args.save_predictions:
@@ -211,7 +211,7 @@ def save_results(args, metrics, stats, predictions, targets):
         np.savez(predictions_file,
                 predictions=predictions,
                 targets=targets)
-        print(f"✓ Predictions saved to: {predictions_file}")
+        print(f"Predictions saved to: {predictions_file}")
 
     return results_file
 
@@ -280,7 +280,7 @@ def main():
             num_workers=args.num_workers
         )
 
-    print(f"✓ Loaded {len(test_loader.dataset)} test samples")
+    print(f"Loaded {len(test_loader.dataset)} test samples")
 
     # Evaluate
     metrics, predictions, targets = evaluate_stage1(model, test_loader, device)

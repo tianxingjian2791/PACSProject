@@ -116,7 +116,7 @@ def train(model, loader, optimizer, device):
         mse
     """
     # Make a progress bar
-    progress_bar = tqdm(total=600, desc="Iterations:")    
+    progress_bar = tqdm(total=len(loader), desc="Training Iterations:")    
 
     model.train()
     total_loss = 0

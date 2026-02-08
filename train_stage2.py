@@ -129,10 +129,126 @@ def create_model(args, device):
     return model
 
 
-def train_epoch(model, loader, optimizer, criterion, device):
+def reconstruct_prolongation_matrices(batch, edge_predictions):
+    """
+    Reconstruct prolongation matrices from edge predictions
+
+    IMPORTANT: Returns P as PyTorch tensor to maintain gradient flow!
+
+    Args:
+        batch: PyG Batch with A_sparse, baseline_P_sparse, S_sparse, coarse_nodes
+        edge_predictions: predicted edge values [total_edges, 1] (PyTorch tensor with gradients)
+
+    Returns:
+        List of (A, P_pred, S) tuples for TwoGridLoss
+        - A, S: numpy arrays (fixed, no gradients needed)
+        - P_pred: PyTorch tensor (trainable, needs gradients!)
+    """
+    import numpy as np
+
+    # Handle batching
+    if hasattr(batch, 'ptr'):
+        batch_size = batch.num_graphs
+    else:
+        # Single graph (no batching)
+        batch_size = 1
+
+    matrices = []
+
+    for graph_idx in range(batch_size):
+        # Get graph-specific data
+        if batch_size > 1:
+            # Extract from batch using to_data_list()
+            data_list = batch.to_data_list()
+            graph_data = data_list[graph_idx]
+
+            # Get edges for this specific graph (with LOCAL indices)
+            graph_edges = graph_data.edge_index
+            graph_edge_attr = graph_data.edge_attr
+
+            # Find which edges belong to this graph in the batch
+            edge_mask = (batch.batch[batch.edge_index[0]] == graph_idx)
+            graph_edge_preds = edge_predictions[edge_mask]  # Keep as tensor!
+
+            # Get stored sparse matrices
+            A = graph_data.A_sparse
+            baseline_P = graph_data.baseline_P_sparse
+            S = graph_data.S_sparse
+            coarse_nodes = graph_data.coarse_nodes
+            num_nodes = graph_data.num_nodes
+        else:
+            # Single graph - use directly
+            graph_edges = batch.edge_index
+            graph_edge_attr = batch.edge_attr
+            graph_edge_preds = edge_predictions  # Keep as tensor!
+
+            A = batch.A_sparse
+            baseline_P = batch.baseline_P_sparse
+            S = batch.S_sparse
+            coarse_nodes = batch.coarse_nodes
+            num_nodes = batch.num_nodes
+
+        # Convert to numpy/tensors
+        graph_edges_np = graph_edges.cpu().numpy()
+        graph_edge_attr_np = graph_edge_attr.cpu().numpy()
+        coarse_nodes_np = coarse_nodes.cpu().numpy()
+        num_coarse = len(coarse_nodes_np)
+
+        # Build P as PyTorch tensor (to keep gradients!)
+        device = graph_edge_preds.device
+        P_pred = torch.zeros((num_nodes, num_coarse), dtype=torch.float32, device=device)
+
+        # Fill in P values using predicted edge values
+        for edge_idx in range(graph_edges_np.shape[1]):
+            row = graph_edges_np[0, edge_idx]  # Local index
+            col = graph_edges_np[1, edge_idx]  # Local index
+
+            # Check if this edge is in the prolongation pattern
+            in_baseline = graph_edge_attr_np[edge_idx, 1] > 0.5
+
+            if in_baseline:
+                # Find which coarse node index this corresponds to
+                coarse_idx = np.where(coarse_nodes_np == col)[0]
+                if len(coarse_idx) > 0:
+                    coarse_idx = coarse_idx[0]
+                    # Use predicted value (clamped for stability)
+                    pred_val = graph_edge_preds[edge_idx, 0]
+                    # Clamp to reasonable range to prevent extreme values
+                    pred_val = torch.clamp(pred_val, min=-10.0, max=10.0)
+                    P_pred[row, coarse_idx] = pred_val
+
+        # Normalize rows (only for rows with non-zero sum)
+        row_sums = P_pred.sum(dim=1, keepdim=True)
+
+        # Only normalize rows that have entries
+        non_zero_mask = (row_sums.squeeze() > 1e-10)
+        if non_zero_mask.any():
+            P_pred[non_zero_mask] = P_pred[non_zero_mask] / row_sums[non_zero_mask]
+
+        # For rows with no entries (shouldn't happen for valid P), set identity-like structure
+        zero_mask = ~non_zero_mask
+        if zero_mask.any():
+            # For nodes with no prolongation entries, use baseline
+            # This shouldn't happen often, but prevents singular matrices
+            baseline_P_dense = torch.from_numpy(baseline_P.toarray()).float().to(device)
+            P_pred[zero_mask] = baseline_P_dense[zero_mask]
+
+        # Convert A and S to numpy (these are fixed, no gradients needed)
+        A_dense = A.toarray()
+        S_dense = S.toarray()
+
+        # P_pred stays as PyTorch tensor! (maintains gradient chain)
+        matrices.append((A_dense, P_pred, S_dense))
+
+    return matrices
+
+
+def train_epoch(epoch, model, loader, optimizer, criterion_mse, criterion_twogrid, device, use_twogrid=True):
     """Train for one epoch"""
     model.train()
     total_loss = 0
+    total_mse_loss = 0
+    total_twogrid_loss = 0
     num_batches = 0
 
     progress_bar = tqdm(loader, desc="Training")
@@ -144,30 +260,73 @@ def train_epoch(model, loader, optimizer, criterion, device):
         # Forward pass
         output = model(batch)
 
-        # For now, use simple MSE loss on edge predictions
-        # TODO: Implement full TwoGridLoss when matrices are available
+        # Compute MSE loss (for monitoring)
         if hasattr(batch, 'y_edge'):
-            loss = criterion(output.edge_attr, batch.y_edge)
+            mse_loss = criterion_mse(output.edge_attr, batch.y_edge)
         else:
-            # Fallback: self-supervised loss
-            loss = criterion(output.edge_attr, batch.edge_attr)
+            # Shouldn't happen with proper data loader
+            target = batch.edge_attr[:, 0:1]
+            mse_loss = criterion_mse(output.edge_attr, target)
+
+        # Compute TwoGridLoss (primary training objective - now differentiable!)
+        # Reconstruct P matrices from predictions
+        P_matrices = reconstruct_prolongation_matrices(batch, output.edge_attr)
+
+        # Extract A, P, S lists
+        A_list = [A for A, P, S in P_matrices]
+        P_list = [P for A, P, S in P_matrices]
+        S_list = [S for A, P, S in P_matrices]
+
+        # Compute two-grid convergence loss (returns differentiable tensor!)
+        twogrid_loss = criterion_twogrid(A_list, P_list, S_list)
+
+        # Use Mixed loss for backpropagation (it's now differentiable!)
+        if epoch <= 10:
+            # Warm-up with MSE loss for first 10 epochs
+            loss = mse_loss
+        else:
+            loss = 0.01 * twogrid_loss + mse_loss  # Combine with MSE loss
 
         # Backward pass
         loss.backward()
+
+        # DEBUG: gradient norm
+        total_grad_norm = 0.0
+        for p in model.parameters():
+            if p.grad is not None:
+                total_grad_norm += (p.grad.data.norm(2).item())**2
+        total_grad_norm = total_grad_norm ** 0.5 
+
         optimizer.step()
 
         total_loss += loss.item()
+        total_mse_loss += mse_loss.item()
+        total_twogrid_loss += (twogrid_loss.item() if isinstance(twogrid_loss, torch.Tensor) else twogrid_loss)
         num_batches += 1
 
-        progress_bar.set_postfix({'loss': f'{loss.item():.6f}'})
+        # Display progress
+        if isinstance(twogrid_loss, torch.Tensor):
+            progress_bar.set_postfix({
+                'loss': f'{loss.item():.6f}',
+                'mse': f'{mse_loss.item():.6f}',
+                'twogrid': f'{twogrid_loss.item():.6f}',
+                'grad': f'{total_grad_norm:.3e}'
+            })
+        else:
+            progress_bar.set_postfix({
+                'loss': f'{loss.item():.6f}',
+                'mse': f'{mse_loss.item():.6f}'
+            })
 
-    return total_loss / num_batches
+    return total_loss / num_batches, total_mse_loss / num_batches, total_twogrid_loss / num_batches
 
 
-def test_epoch(model, loader, criterion, device):
+def test_epoch(epoch, model, loader, criterion_mse, criterion_twogrid, device, use_twogrid=True):
     """Evaluate on test set"""
     model.eval()
     total_loss = 0
+    total_mse_loss = 0
+    total_twogrid_loss = 0
     num_batches = 0
 
     with torch.no_grad():
@@ -177,16 +336,33 @@ def test_epoch(model, loader, criterion, device):
             # Forward pass
             output = model(batch)
 
-            # Compute loss
+            # Compute MSE loss
             if hasattr(batch, 'y_edge'):
-                loss = criterion(output.edge_attr, batch.y_edge)
+                mse_loss = criterion_mse(output.edge_attr, batch.y_edge)
             else:
-                loss = criterion(output.edge_attr, batch.edge_attr)
+                target = batch.edge_attr[:, 0:1]
+                mse_loss = criterion_mse(output.edge_attr, target)
+
+            # Compute TwoGridLoss (now returns differentiable tensor)
+            P_matrices = reconstruct_prolongation_matrices(batch, output.edge_attr)
+            A_list = [A for A, P, S in P_matrices]
+            P_list = [P for A, P, S in P_matrices]
+            S_list = [S for A, P, S in P_matrices]
+
+            twogrid_loss = criterion_twogrid(A_list, P_list, S_list)
+
+            if epoch <= 10:
+                # During warm-up, report MSE loss only 
+                loss = mse_loss
+            else:            
+                loss = mse_loss + 0.01 * twogrid_loss
 
             total_loss += loss.item()
+            total_mse_loss += mse_loss.item()
+            total_twogrid_loss += twogrid_loss.item()
             num_batches += 1
 
-    return total_loss / num_batches
+    return total_loss / num_batches, total_mse_loss / num_batches, total_twogrid_loss / num_batches
 
 
 def main():
@@ -261,8 +437,13 @@ def main():
         patience=5
     )
 
-    # Loss function
-    criterion = nn.MSELoss()
+    # Loss functions
+    criterion_mse = nn.MSELoss()  # For monitoring
+    criterion_twogrid = TwoGridLoss(loss_type='frobenius')  # Primary training objective
+
+    print(f"\nLoss functions:")
+    print(f"  Warm up:  MSE loss")
+    print(f"  Following: MSE + 0.01 * TwoGridLoss")
 
     # Create training utilities
     checkpointer = Checkpointer(
@@ -297,36 +478,40 @@ def main():
         print("-" * 40)
 
         # Train
-        train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
-        print(f"Train Loss: {train_loss:.6f}")
+        train_loss, train_mse, train_twogrid = train_epoch(epoch,
+            model, train_loader, optimizer, criterion_mse, criterion_twogrid, device, use_twogrid=True
+        )
+        print(f"Train Loss: {train_loss:.6f} | MSE: {train_mse:.6f} | TwoGrid: {train_twogrid:.6f}")
 
         # Evaluate
-        test_loss = test_epoch(model, test_loader, criterion, device)
-        print(f"Test Loss:  {test_loss:.6f}")
+        test_loss, test_mse, test_twogrid = test_epoch(epoch,
+            model, test_loader, criterion_mse, criterion_twogrid, device, use_twogrid=True
+        )
+        print(f"Test Loss:  {test_loss:.6f} | MSE: {test_mse:.6f} | TwoGrid: {test_twogrid:.6f}")
 
         # Log metrics
-        logger.log_epoch(epoch, train_loss, test_loss)
+        logger.log_epoch(epoch, train_mse+0.01*train_twogrid, test_mse+0.01*test_twogrid)
 
         # Learning rate scheduling
-        scheduler.step(test_loss)
+        scheduler.step(test_mse+0.01*test_twogrid)  # Use combined metric for scheduling
 
         # Save checkpoint
-        is_best = test_loss < best_test_loss
+        is_best = (test_mse + 0.01 * test_twogrid) < best_test_loss
         if is_best:
-            best_test_loss = test_loss
-            print(f"✓ New best model! Test loss: {test_loss:.6f}")
+            best_test_loss = test_mse + 0.01 * test_twogrid
+            print(f"New best model! Test loss: {best_test_loss:.6f}")
 
         checkpointer.save(
             model=model,
             optimizer=optimizer,
             epoch=epoch,
-            loss=test_loss,
+            loss=test_mse + 0.01 * test_twogrid,
             is_best=is_best,
-            metadata={'train_loss': train_loss, 'test_loss': test_loss}
+            metadata={'train_loss': train_loss, 'test_loss': test_loss, 'test_mse': test_mse, 'test_twogrid': test_twogrid}
         )
 
         # Early stopping
-        if early_stopping(test_loss):
+        if early_stopping(test_mse + 0.01 * test_twogrid):
             print(f"\nEarly stopping triggered after {epoch} epochs")
             break
 

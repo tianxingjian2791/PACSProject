@@ -731,7 +731,7 @@ void UnifiedAMGDataGenerator::write_sample_npz_theta_cnn(
         theta
     };
 
-    std::vector<double> y_arr = {theta};  // y = theta for CNN prediction
+    std::vector<double> y_arr = {rho};  // y = rho (convergence factor to predict)
 
     // Create filename
     std::ostringstream filename;

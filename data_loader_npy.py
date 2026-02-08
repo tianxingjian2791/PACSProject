@@ -99,8 +99,18 @@ class CNNThetaDatasetNPY(torch.utils.data.Dataset):
 
     Each npz file contains:
         - pooled_matrix: (50, 50) pooled matrix
-        - y: scalar theta value (target)
+        - y: rho (convergence factor) - CORRECTED after C++ fix
         - metadata: [n, rho, h, theta]
+
+    The model learns: rho = f(matrix, h, theta)
+    At inference: try different theta values to find optimal convergence
+
+    Returns:
+        X: Concatenated tensor [theta, log_h, flattened_matrix] of shape (2502,)
+           - theta: strong threshold parameter (input feature)
+           - log_h: -log2(mesh_size) (input feature)
+           - flattened_matrix: 2500 pooled matrix values
+        y: rho (convergence factor) - the prediction target
     """
 
     def __init__(self, root, transform=None):
@@ -125,16 +135,33 @@ class CNNThetaDatasetNPY(torch.utils.data.Dataset):
         # Extract pooled matrix (50x50)
         pooled_matrix = data['pooled_matrix']  # Shape: (50, 50)
 
-        # Extract target (theta value)
-        y = data['y']  # Scalar
+        # Extract y (rho - convergence factor, the target to predict)
+        # After C++ fix, y now correctly contains rho instead of theta
+        y_data = data['y']
+        rho = float(y_data[0]) if y_data.ndim > 0 else float(y_data)
 
-        # Extract metadata
-        metadata = data['metadata']  # [n, rho, h, theta]
+        # Extract metadata: [n, rho, h, theta]
+        # Note: metadata[1] also contains rho, but we use data['y'] for consistency
+        metadata = data['metadata']
+        h = metadata[2]      # Mesh size
+        theta = metadata[3]  # Strong threshold (input feature)
+
+        # Compute log_h (input feature)
+        log_h = -np.log2(h)
+
+        # Flatten pooled matrix
+        matrix_flat = pooled_matrix.flatten()  # Shape: (2500,)
+
+        # CNN model expects input format: [theta, log_h, flattened_matrix]
+        # Total shape: (2502,) = [1 + 1 + 2500]
+        X = np.concatenate([[theta], [log_h], matrix_flat])
+
+        # Target is rho (convergence factor)
+        y = rho
 
         # Convert to tensors
-        # Add channel dimension: (1, 50, 50) for CNN input
-        X = torch.from_numpy(pooled_matrix).float().unsqueeze(0)
-        y = torch.from_numpy(y).float()
+        X = torch.from_numpy(X).float()
+        y = torch.tensor(y, dtype=torch.float32)
 
         # Return as tuple (input, target) for standard PyTorch DataLoader
         if self.transform:
@@ -218,10 +245,10 @@ class PValueDatasetNPY(Dataset):
             np.vstack([A_coo.row, A_coo.col]),
             dtype=torch.long
         )
-        edge_attr = torch.tensor(A_coo.data, dtype=torch.float32).view(-1, 1)
 
         # Coarse nodes
         coarse_nodes = torch.from_numpy(data['coarse_nodes']).long()
+        num_coarse = len(coarse_nodes)
 
         # Create node features (coarse/fine indicators)
         coarse_indicator = torch.zeros(n, dtype=torch.float32)
@@ -229,27 +256,52 @@ class PValueDatasetNPY(Dataset):
         fine_indicator = 1.0 - coarse_indicator
         x = torch.stack([coarse_indicator, fine_indicator], dim=1)
 
-        # Reconstruct baseline P matrix for edge indicators
+        # Reconstruct baseline P matrix
         P = csr_matrix(
             (data['P_values'], data['P_col_idx'], data['P_row_ptr']),
-            shape=(n, len(coarse_nodes))
+            shape=(n, num_coarse)
         )
         P_coo = P.tocoo()
-        baseline_edges = set(zip(P_coo.row, P_coo.col))
 
-        # Add edge indicators (in baseline / not in baseline)
+        # Create mapping from (row, coarse_node_idx) to P value
+        # P[i, j] means prolongation from node i to coarse node j
+        # But coarse_nodes[j] is the actual node index
+        P_value_map = {}
+        for i in range(len(P_coo.row)):
+            row_idx = P_coo.row[i]
+            coarse_idx = P_coo.col[i]  # Index into coarse_nodes array
+            coarse_node = coarse_nodes[coarse_idx].item()
+            P_value_map[(row_idx, coarse_node)] = P_coo.data[i]
+
+        # For each edge in A, check if it's in the prolongation sparsity pattern
+        # and create target P-values
         edge_in_baseline = []
         edge_not_in_baseline = []
-        for i in range(len(A_coo.row)):
-            # Note: baseline P edges are different from A edges
-            # For now, just use zeros as placeholders
-            edge_in_baseline.append(0.0)
-            edge_not_in_baseline.append(1.0)
+        y_edge = []
 
+        for i in range(len(A_coo.row)):
+            row = A_coo.row[i]
+            col = A_coo.col[i]
+
+            # Check if this edge (row, col) is in the prolongation pattern
+            # An edge is in P if it goes from a node to a coarse node
+            if (row, col) in P_value_map:
+                edge_in_baseline.append(1.0)
+                edge_not_in_baseline.append(0.0)
+                y_edge.append(P_value_map[(row, col)])
+            else:
+                edge_in_baseline.append(0.0)
+                edge_not_in_baseline.append(1.0)
+                y_edge.append(0.0)  # No prolongation value for this edge
+
+        # Create edge features: [A_value, in_baseline, not_in_baseline]
         edge_attr_full = torch.tensor(
             np.column_stack([A_coo.data, edge_in_baseline, edge_not_in_baseline]),
             dtype=torch.float32
         )
+
+        # Create target tensor for P-values
+        y_edge_tensor = torch.tensor(y_edge, dtype=torch.float32).view(-1, 1)
 
         # Global features (placeholder)
         u = torch.zeros(1, 128, dtype=torch.float32)
@@ -259,6 +311,7 @@ class PValueDatasetNPY(Dataset):
             x=x,
             edge_index=edge_index,
             edge_attr=edge_attr_full,
+            y_edge=y_edge_tensor,  # Target P-values for each edge
             u=u,
             num_nodes=n
         )
@@ -467,10 +520,10 @@ if __name__ == "__main__":
         print(f"  edge_index: {batch.edge_index.shape}")
         print(f"  edge_attr: {batch.edge_attr.shape}")
         print(f"  y: {batch.y.shape}")
-        print("✓ theta_gnn NPY loader works!")
+        print("theta_gnn NPY loader works!")
 
     except FileNotFoundError as e:
-        print(f"⚠ Error: theta_gnn NPY data not found: {e}")
+        print(f"Error: theta_gnn NPY data not found: {e}")
 
     print()
 
@@ -484,12 +537,16 @@ if __name__ == "__main__":
 
         # Test loading first batch
         X, y = next(iter(train_loader))
-        print(f"Batch X shape: {X.shape}  (expected: [batch_size, 1, 50, 50])")
+        print(f"Batch X shape: {X.shape}  (expected: [batch_size, 2502])")
+        print(f"  X format: [theta, log_h, flattened_matrix(2500)]")
         print(f"Batch y shape: {y.shape}  (expected: [batch_size])")
-        print("✓ theta_cnn NPY loader works!")
+        print(f"  y = rho (convergence factor)")
+        print(f"Sample X[0]: theta={X[0,0]:.4f}, log_h={X[0,1]:.4f}, matrix[0]={X[0,2]:.4f}")
+        print(f"Sample y[0]: rho={y[0]:.6f}")
+        print("theta_cnn NPY loader works!")
 
     except FileNotFoundError as e:
-        print(f"⚠ Error: theta_cnn NPY data not found: {e}")
+        print(f"Error: theta_cnn NPY data not found: {e}")
 
     print()
 
@@ -504,7 +561,7 @@ if __name__ == "__main__":
         # Test loading first batch
         batch = next(iter(train_loader))
         print(f"Sample keys: {list(batch[0].keys())}")
-        print("✓ p_value NPY loader works!")
+        print("p_value NPY loader works!")
 
     except FileNotFoundError as e:
-        print(f"⚠ Error: p_value NPY data not found: {e}")
+        print(f"Error: p_value NPY data not found: {e}")

@@ -297,7 +297,7 @@ def main():
         is_best = test_loss < best_test_loss
         if is_best:
             best_test_loss = test_loss
-            print(f"✓ New best model! Test loss: {test_loss:.6f}")
+            print(f"New best model! Test loss: {test_loss:.6f}")
 
         checkpointer.save(
             model=model,
