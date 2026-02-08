@@ -446,7 +446,7 @@ python evaluate.py \
 ```
 ---
 
-## 🛠️ Detailed Installation
+## Detailed Installation
 ```bash
 # Step 1: Install PETSc
 # First method: install it using package manager(Recommendation)
