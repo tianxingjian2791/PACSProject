@@ -30,7 +30,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 # Import models
-from model import UnifiedAMGModel, EncodeProcessDecode
+from model import EncodeProcessDecode
 
 # Import data processing
 from data import create_p_value_data_loaders
