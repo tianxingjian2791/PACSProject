@@ -918,10 +918,8 @@ namespace AMGStokes
   }
 
 
-  // ============================================================================
+  
   // Getter Method Implementations
-  // ============================================================================
-
   template <int dim>
   AMGOperators::CSRMatrix StokesProblem<dim>::get_system_matrix_csr()
   {
@@ -940,10 +938,7 @@ namespace AMGStokes
     return convergence_factor;
   }
 
-  // ============================================================================
   // PETSc Block Matrix to CSR Conversion
-  // ============================================================================
-
   template <int dim>
   AMGOperators::CSRMatrix StokesProblem<dim>::petsc_to_csr(const LA::MPI::BlockSparseMatrix &matrix)
   {
@@ -999,10 +994,7 @@ namespace AMGStokes
     return A;
   }
 
-  // ============================================================================
   // DEPRECATED: Legacy dataset generation (use generate_amg_data instead)
-  // ============================================================================
-
   void generate_dataset(std::ofstream &file, std::string train_flag)
   {
     std::cerr << "ERROR: generate_dataset() is deprecated." << std::endl;

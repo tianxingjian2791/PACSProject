@@ -497,14 +497,9 @@ namespace AMGDiffusion
     return csr;
   }
 
-  /**
-   * Write P-value format CSV with C/F splitting and P, S matrices
-   * Format: n, n, theta, rho, h, nnz,
-   *         [A_values], [A_row_ptrs], [A_col_indices],
-   *         num_coarse, [coarse_indices],
-   *         nnz_P, [P_values], [P_row_ptrs], [P_col_indices],
-   *         nnz_S, [S_values], [S_row_ptrs], [S_col_indices]
-   */
+  // Write P-value format CSV with C/F splitting and P, S matrices
+  // Format: n, n, theta, rho, h, nnz, [A_values], [A_row_ptrs], [A_col_indices], num_coarse, 
+  // [coarse_indices], nnz_P, [P_values], [P_row_ptrs], [P_col_indices], nnz_S, [S_values], [S_row_ptrs], [S_col_indices]
   template <int dim>
   void Solver<dim>::write_pvalue_to_csv(const PETScWrappers::MPI::SparseMatrix &matrix,
                                          std::ofstream &file,
@@ -570,9 +565,7 @@ namespace AMGDiffusion
     file << "\n";
   }
 
-  /**
-   * Solve with specified output format
-   */
+  // Solve with specified output format
   template <int dim>
   void Solver<dim>::solve_with_format(std::ofstream &file, OutputFormat format)
   {
@@ -644,9 +637,7 @@ namespace AMGDiffusion
 
   }
 
-  /**
-   * Getter methods for unified interface
-   */
+  // Getter methods for unified interface
   template <int dim>
   AMGOperators::CSRMatrix Solver<dim>::get_system_matrix_csr()
   {
@@ -665,11 +656,8 @@ namespace AMGDiffusion
     return convergence_factor;
   }
 
-  /**
-   * Generate complete dataset (LEGACY - deprecated, will be removed)
-   * NOTE: This function is no longer maintained after DiffusionPattern removal.
-   * Use the new unified generator in src/generate_amg_data.cpp instead.
-   */
+  
+  // Generate complete dataset (LEGACY - deprecated, will be removed)
   void generate_dataset(std::ofstream &file, std::string train_flag)
   {
     std::cerr << "ERROR: generate_dataset() is deprecated." << std::endl;

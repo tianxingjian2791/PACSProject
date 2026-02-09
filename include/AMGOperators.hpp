@@ -12,9 +12,8 @@
 
 namespace AMGOperators
 {
-    /**
-     * Sparse matrix in CSR (Compressed Sparse Row) format
-     */
+    
+    // Sparse matrix in CSR (Compressed Sparse Row) format
     struct CSRMatrix
     {
         int n_rows;
@@ -34,11 +33,7 @@ namespace AMGOperators
     /**
      * Compute strength of connection matrix
      * Node i is strongly connected to j if: -a_ij >= theta * max_k(-a_ik)
-     * Parameters:
-     *  A - System matrix in CSR format
-     *  theta - Strong threshold parameter
-     *  return - Strength matrix (binary: 1 = strong connection, 0 = weak)
-     */
+    **/    
     CSRMatrix compute_strength_matrix(const CSRMatrix& A, double theta)
     {
         const int n = A.n_rows;
@@ -97,13 +92,7 @@ namespace AMGOperators
         return S;
     }
 
-    /**
-     * Classical Ruge-Stüben C/F splitting
-     * Parameters:
-     *  A - System matrix in CSR format
-     *  theta - Strong threshold parameter
-     *  return - cf_markers: 1 = coarse, 0 = fine
-     */
+    // Classical Ruge-Stüben C/F splitting
     std::vector<int> classical_cf_splitting(const CSRMatrix& A, double theta)
     {
         const int n = A.n_rows;
@@ -201,13 +190,7 @@ namespace AMGOperators
         return coarse_nodes;
     }
 
-    /**
-     * Compute baseline prolongation matrix using direct interpolation
-     * Parameters:
-     *  A - System matrix in CSR format
-     *  cf_markers - C/F markers (1=coarse, 0=fine)
-     *  return - Prolongation matrix P in CSR format
-     */
+    // Compute baseline prolongation matrix using direct interpolation
     CSRMatrix compute_baseline_prolongation(const CSRMatrix& A,
                                            const std::vector<int>& cf_markers)
     {
@@ -303,12 +286,7 @@ namespace AMGOperators
         return P;
     }
 
-    /**
-     * Compute Gauss-Seidel relaxation matrix
-     * S = -(D+L)^{-1} * U
-     *
-     * For efficiency, store only the splitting (D, L, U)
-     */
+    // Compute Gauss-Seidel relaxation matrix
     struct RelaxationMatrices
     {
         std::vector<double> D_inv;  // Inverse of diagonal
@@ -316,11 +294,8 @@ namespace AMGOperators
         CSRMatrix U;                 // Upper triangular
     };
 
-    /**
-     * Compute Gauss-Seidel smoother iteration matrix
-     * Note: For large matrices, we only store the components (D, L, U)
-     * The actual iteration is done implicitly
-     */
+    
+    // Compute Gauss-Seidel smoother iteration matrix
     CSRMatrix compute_gauss_seidel_smoother(const CSRMatrix& A)
     {
         const int n = A.n_rows;

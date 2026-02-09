@@ -41,12 +41,6 @@ class UnifiedAMGDataset(Dataset):
     ):
         """
         Initialize unified dataset
-
-        Parameters:
-            root_dir: root directory containing dataset
-            split: 'train' or 'test'
-            stage1_type: 'CNN' or 'GNN' for Stage 1
-            csv_file: unified CSV filename
         """
         self.root_dir = root_dir
         self.split = split
@@ -141,13 +135,6 @@ class UnifiedAMGDataLoader:
     ):
         """
         Initialize unified data loader
-
-        Parameters:
-            dataset: UnifiedAMGDataset instance
-            batch_size_stage1: batch size for Stage 1
-            batch_size_stage2: batch size for Stage 2
-            shuffle: whether to shuffle
-            num_workers: number of dataloader workers
         """
         self.dataset = dataset
         self.batch_size_stage1 = batch_size_stage1
@@ -201,14 +188,6 @@ def create_unified_data_loaders(
     """
     Factory function to create unified train and test loaders
 
-    Parameters:
-        data_dir: root dataset directory
-        stage1_type: 'CNN' or 'GNN' for Stage 1
-        csv_file: unified CSV filename
-        batch_size_stage1: batch size for Stage 1
-        batch_size_stage2: batch size for Stage 2
-        num_workers: number of dataloader workers
-
     Returns:
         Tuple of (train_loader, test_loader) - UnifiedAMGDataLoader instances
     """
@@ -255,11 +234,6 @@ def split_unified_csv(
 ):
     """
     Split a unified CSV file into train and test sets
-
-    Parameters:
-        unified_csv_path: path to unified CSV file
-        output_dir: output directory
-        train_ratio: ratio of training samples
     """
     os.makedirs(output_dir, exist_ok=True)
 

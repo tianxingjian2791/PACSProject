@@ -12,12 +12,6 @@ class GNNThetaDatasetNPY(Dataset):
     """
     PyTorch Geometric Dataset for loading theta_gnn data from NPZ files
 
-    Directory structure:
-        root/
-            sample_00000.npz
-            sample_00001.npz
-            ...
-
     Each npz file contains:
         - edge_index: (2, num_edges)
         - edge_attr: (num_edges,)
@@ -91,19 +85,10 @@ class CNNThetaDatasetNPY(torch.utils.data.Dataset):
     """
     PyTorch Dataset for loading theta_cnn data from NPZ files
 
-    Directory structure:
-        root/
-            sample_00000.npz
-            sample_00001.npz
-            ...
-
     Each npz file contains:
         - pooled_matrix: (50, 50) pooled matrix
         - y: rho (convergence factor) - CORRECTED after C++ fix
         - metadata: [n, rho, h, theta]
-
-    The model learns: rho = f(matrix, h, theta)
-    At inference: try different theta values to find optimal convergence
 
     Returns:
         X: Concatenated tensor [theta, log_h, flattened_matrix] of shape (2502,)
@@ -175,12 +160,6 @@ class PValueDatasetNPY(Dataset):
     PyTorch Geometric Dataset for loading p_value data from NPZ files
 
     Returns PyG Data objects for proper batching support.
-
-    Directory structure:
-        root/
-            sample_00000.npz
-            sample_00001.npz
-            ...
 
     Each npz file contains:
         - A_values, A_row_ptr, A_col_idx: CSR matrix A
@@ -341,13 +320,6 @@ def create_theta_data_loaders_npy(dataset_root, train_problem='train_D', test_pr
     """
     Create data loaders for NPY format theta_gnn dataset
 
-    Args:
-        dataset_root: Path to dataset root (e.g., 'datasets/unified')
-        train_problem: Training problem directory name (e.g., 'train_D', 'train_GL')
-        test_problem: Test problem directory name (e.g., 'test_D', 'test_GL')
-        batch_size: Batch size for training
-        num_workers: Number of workers for data loading
-
     Returns:
         train_loader, test_loader
     """
@@ -361,7 +333,6 @@ def create_theta_data_loaders_npy(dataset_root, train_problem='train_D', test_pr
     if not os.path.exists(train_path):
         raise FileNotFoundError(
             f"NPY data not found at {train_path}\n"
-            "Please generate NPY data using: ./build/generate_amg_data -p <type> -s train -f theta-gnn -c <scale>"
         )
 
     print(f"Loading NPY datasets from:")
@@ -393,13 +364,6 @@ def create_theta_cnn_data_loaders_npy(dataset_root, train_problem='train_D', tes
     """
     Create data loaders for NPY format theta_cnn dataset
 
-    Args:
-        dataset_root: Path to dataset root (e.g., 'datasets/unified')
-        train_problem: Training problem directory name (e.g., 'train_D', 'train_GL')
-        test_problem: Test problem directory name (e.g., 'test_D', 'test_GL')
-        batch_size: Batch size for training
-        num_workers: Number of workers for data loading
-
     Returns:
         train_loader, test_loader
     """
@@ -413,7 +377,6 @@ def create_theta_cnn_data_loaders_npy(dataset_root, train_problem='train_D', tes
     if not os.path.exists(train_path):
         raise FileNotFoundError(
             f"NPY data not found at {train_path}\n"
-            "Please generate NPY data using: ./build/generate_amg_data -p <type> -s train -f theta-cnn -c <scale>"
         )
 
     print(f"Loading CNN NPY datasets from:")
@@ -445,13 +408,6 @@ def create_pvalue_data_loaders_npy(dataset_root, train_problem='train_D', test_p
     """
     Create data loaders for NPY format p_value dataset
 
-    Args:
-        dataset_root: Path to dataset root (e.g., 'datasets/unified')
-        train_problem: Training problem directory name (e.g., 'train_D', 'train_GL')
-        test_problem: Test problem directory name (e.g., 'test_D', 'test_GL')
-        batch_size: Batch size for training
-        num_workers: Number of workers for data loading
-
     Returns:
         train_loader, test_loader (PyG DataLoaders)
     """
@@ -465,7 +421,6 @@ def create_pvalue_data_loaders_npy(dataset_root, train_problem='train_D', test_p
     if not os.path.exists(train_path):
         raise FileNotFoundError(
             f"NPY data not found at {train_path}\n"
-            "Please generate NPY data using: ./build/generate_amg_data -p <type> -s train -f p-value -c <scale>"
         )
 
     print(f"Loading NPY datasets from:")
@@ -491,77 +446,3 @@ def create_pvalue_data_loaders_npy(dataset_root, train_problem='train_D', test_p
 
     return train_loader, test_loader
 
-
-if __name__ == "__main__":
-    # Test loading
-    import sys
-
-    if len(sys.argv) < 2:
-        print("Usage: python data_loader_npy.py <dataset_root>")
-        print("Example: python data_loader_npy.py datasets/unified")
-        sys.exit(1)
-
-    dataset_root = sys.argv[1]
-
-    print("Testing NPY data loaders...")
-    print()
-
-    try:
-        print("=" * 50)
-        print("Testing theta_gnn NPY loader...")
-        print("=" * 50)
-        train_loader, test_loader = create_theta_data_loaders_npy(dataset_root, batch_size=4)
-        print(f"Train batches: {len(train_loader)}")
-        print(f"Test batches: {len(test_loader)}")
-
-        # Test loading first batch
-        batch = next(iter(train_loader))
-        print(f"Batch shape: {batch}")
-        print(f"  edge_index: {batch.edge_index.shape}")
-        print(f"  edge_attr: {batch.edge_attr.shape}")
-        print(f"  y: {batch.y.shape}")
-        print("theta_gnn NPY loader works!")
-
-    except FileNotFoundError as e:
-        print(f"Error: theta_gnn NPY data not found: {e}")
-
-    print()
-
-    try:
-        print("=" * 50)
-        print("Testing theta_cnn NPY loader...")
-        print("=" * 50)
-        train_loader, test_loader = create_theta_cnn_data_loaders_npy(dataset_root, batch_size=4)
-        print(f"Train batches: {len(train_loader)}")
-        print(f"Test batches: {len(test_loader)}")
-
-        # Test loading first batch
-        X, y = next(iter(train_loader))
-        print(f"Batch X shape: {X.shape}  (expected: [batch_size, 2502])")
-        print(f"  X format: [theta, log_h, flattened_matrix(2500)]")
-        print(f"Batch y shape: {y.shape}  (expected: [batch_size])")
-        print(f"  y = rho (convergence factor)")
-        print(f"Sample X[0]: theta={X[0,0]:.4f}, log_h={X[0,1]:.4f}, matrix[0]={X[0,2]:.4f}")
-        print(f"Sample y[0]: rho={y[0]:.6f}")
-        print("theta_cnn NPY loader works!")
-
-    except FileNotFoundError as e:
-        print(f"Error: theta_cnn NPY data not found: {e}")
-
-    print()
-
-    try:
-        print("=" * 50)
-        print("Testing p_value NPY loader...")
-        print("=" * 50)
-        train_loader, test_loader = create_pvalue_data_loaders_npy(dataset_root, batch_size=4)
-        print(f"Train batches: {len(train_loader)}")
-        print(f"Test batches: {len(test_loader)}")
-
-        # Test loading first batch
-        batch = next(iter(train_loader))
-        print(f"Sample keys: {list(batch[0].keys())}")
-        print("p_value NPY loader works!")
-
-    except FileNotFoundError as e:
-        print(f"Error: p_value NPY data not found: {e}")

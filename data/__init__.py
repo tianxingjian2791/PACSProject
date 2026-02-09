@@ -5,7 +5,7 @@ This package contains dataset and dataloader classes for:
     - CNN data (pooled matrix images)
     - GNN data (sparse graph representations)
     - Unified data (both theta and P-value prediction)
-    - NPY/NPZ data (high-performance binary format)
+    - NPY/NPZ data (binary format)
 """
 
 from .cnn_data_processing import (

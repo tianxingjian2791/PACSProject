@@ -133,12 +133,6 @@ def reconstruct_prolongation_matrices(batch, edge_predictions):
     """
     Reconstruct prolongation matrices from edge predictions
 
-    IMPORTANT: Returns P as PyTorch tensor to maintain gradient flow!
-
-    Args:
-        batch: PyG Batch with A_sparse, baseline_P_sparse, S_sparse, coarse_nodes
-        edge_predictions: predicted edge values [total_edges, 1] (PyTorch tensor with gradients)
-
     Returns:
         List of (A, P_pred, S) tuples for TwoGridLoss
         - A, S: numpy arrays (fixed, no gradients needed)
@@ -394,19 +388,18 @@ def main():
 
     print("="*60)
     print("Stage 2 Training: P-Value Prediction")
-    print("="*60)
     print(f"Dataset: {args.dataset}")
     print(f"Experiment: {args.experiment_name}")
     if args.stage1_weights:
         print(f"Stage 1 weights: {args.stage1_weights}")
-    print("="*60)
+    print("\n\n")
 
     # Get device
     device = get_device()
 
     # Create dataloaders
     print("\nLoading data...")
-    print(f"Format: {'NPY/NPZ (high-performance)' if args.use_npy else 'CSV'}")
+    print(f"Format: {'NPY/NPZ' if args.use_npy else 'CSV'}")
 
     if args.use_npy:
         from data import create_pvalue_data_loaders_npy
@@ -456,8 +449,9 @@ def main():
     criterion_twogrid = TwoGridLoss(loss_type='frobenius')  # Primary training objective
 
     print(f"\nLoss functions:")
-    print(f"  Warm up:  MSE loss")
-    print(f"  Following: MSE + 0.01 * TwoGridLoss")
+    print("  TwoGridLoss (Frobenius norm)")
+    # print(f"  Warm up:  MSE loss")
+    # print(f"  Following: MSE + 0.01 * TwoGridLoss")
 
     # Create training utilities
     checkpointer = Checkpointer(
@@ -529,7 +523,7 @@ def main():
             print(f"\nEarly stopping triggered after {epoch} epochs")
             break
 
-    print("\n" + "="*60)
+    print("\n\n")
     print("Training Complete!")
     print(f"Best test loss: {best_test_loss:.6f}")
     print(f"Best model saved to: {checkpointer.checkpoint_dir / 'best_model.pt'}")

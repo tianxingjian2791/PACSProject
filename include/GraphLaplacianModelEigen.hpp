@@ -1,5 +1,4 @@
 /* ---------------------------------------------------------------------
- * GraphLaplacianModelEigen.hpp
  *
  * Eigen-based graph Laplacian generation for maximum performance
  * Uses Eigen::SparseMatrix and Triplet format for efficient construction
@@ -23,10 +22,7 @@ namespace GraphLaplacian {
 using SpMat = Eigen::SparseMatrix<double, Eigen::RowMajor>;  // Row-major for efficient CSR conversion
 using Triplet = Eigen::Triplet<double>;
 
-// ============================================================================
 // Point and Geometry Structures
-// ============================================================================
-
 struct Point2D {
     double x, y;
 
@@ -66,10 +62,7 @@ struct Triangle {
     Triangle(int a, int b, int c) : v0(a), v1(b), v2(c) {}
 };
 
-// ============================================================================
 // Delaunay Triangulation (Bowyer-Watson Algorithm)
-// ============================================================================
-
 class DelaunayTriangulation {
 public:
     explicit DelaunayTriangulation(const std::vector<Point2D>& points);
@@ -269,10 +262,7 @@ std::vector<std::pair<int, int>> DelaunayTriangulation::getEdges() const {
     return std::vector<std::pair<int, int>>(edge_set.begin(), edge_set.end());
 }
 
-// ============================================================================
 // Graph Laplacian Configuration
-// ============================================================================
-
 enum class GraphType {
     LOGNORMAL_LAPLACIAN,
     UNIFORM_LAPLACIAN,
@@ -292,10 +282,7 @@ struct GraphConfig {
     int seed = 42;
 };
 
-// ============================================================================
 // Graph Laplacian Generator (Eigen-based)
-// ============================================================================
-
 class GraphLaplacianGenerator {
 public:
     explicit GraphLaplacianGenerator(const GraphConfig& config);
@@ -573,10 +560,7 @@ SpMat GraphLaplacianGenerator::buildLaplacianFromNeighbors(
     return L;
 }
 
-// ============================================================================
 // Conversion Functions: Eigen <-> AMGOperators::CSRMatrix
-// ============================================================================
-
 inline AMGOperators::CSRMatrix eigenToCSR(const SpMat& eigen_mat) {
     AMGOperators::CSRMatrix csr;
     csr.n_rows = eigen_mat.rows();
@@ -598,10 +582,7 @@ inline AMGOperators::CSRMatrix eigenToCSR(const SpMat& eigen_mat) {
     return csr;
 }
 
-// ============================================================================
 // Utility Functions
-// ============================================================================
-
 inline double compute_mesh_size(const SpMat& A, int num_points) {
     double sum_abs = 0.0;
     int count = 0;
@@ -622,7 +603,7 @@ inline double compute_mesh_size(const SpMat& A, int num_points) {
 }
 
 inline double find_optimal_theta_for_graph(const SpMat& eigen_mat, double& best_rho) {
-    // Fast heuristic-based theta selection (matching unified-amg-learning performance)
+    // Fast heuristic-based theta selection
     // Uses sparsity-based estimation instead of expensive C/F splitting
 
     std::vector<double> theta_candidates = {0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6};

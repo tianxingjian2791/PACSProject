@@ -206,8 +206,6 @@ class EncodeProcessDecode(nn.Module):
 
     def forward(self, data: Data) -> Data:
         """
-        Forward pass through the network.
-
         Args:
             data: PyTorch Geometric Data object with:
                 - x: node features [N, node_input_size] (coarse/fine indicators)

@@ -29,12 +29,6 @@ class GNNThetaDataset(InMemoryDataset):
     def __init__(self, root, csv_file, transform=None, pre_transform=None):
         """
         Initialize the dataset
-
-        Parameters:
-            root: the root of dataset
-            csv_file: CSV file name
-            transform: optional
-            pre_transform: optional
         """
         self.csv_file = csv_file
         super().__init__(root, transform, pre_transform)
@@ -158,14 +152,6 @@ class GNNPValueDataset(Dataset):
                  transform=None, pre_transform=None):
         """
         Initialize P-value dataset
-
-        Parameters:
-            root: dataset root directory
-            csv_file: CSV filename
-            node_indicators: include coarse/fine node indicators
-            edge_indicators: include baseline/non-baseline edge indicators
-            transform: optional transform
-            pre_transform: optional pre-transform
         """
         self.csv_file = csv_file
         self.node_indicators = node_indicators
@@ -365,16 +351,6 @@ def create_theta_data_loaders(data_dir, train_file, test_file,
                               batch_size=32, num_workers=4):
     """
     Create data loaders for theta prediction (Stage 1)
-
-    Parameters:
-        data_dir: dataset directory
-        train_file: training CSV filename
-        test_file: test CSV filename
-        batch_size: batch size
-        num_workers: number of dataloader workers
-
-    Returns:
-        train_loader, test_loader
     """
     train_dataset = GNNThetaDataset(
         root=os.path.join(data_dir, 'train'),
@@ -411,18 +387,6 @@ def create_p_value_data_loaders(data_dir, train_file, test_file,
                                 node_indicators=True, edge_indicators=True):
     """
     Create data loaders for P-value prediction (Stage 2)
-
-    Parameters:
-        data_dir: dataset directory
-        train_file: training CSV filename
-        test_file: test CSV filename
-        batch_size: batch size (typically smaller for Stage 2)
-        num_workers: number of dataloader workers
-        node_indicators: include coarse/fine indicators
-        edge_indicators: include baseline/non-baseline indicators
-
-    Returns:
-        train_loader, test_loader
     """
     train_dataset = GNNPValueDataset(
         root=os.path.join(data_dir, 'train'),

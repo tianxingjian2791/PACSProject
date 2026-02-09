@@ -218,10 +218,6 @@ def reconstruct_prolongation_matrices(batch, edge_predictions):
     """
     Reconstruct prolongation matrices from edge predictions
 
-    Args:
-        batch: PyG Batch with A_sparse, baseline_P_sparse, S_sparse, coarse_nodes
-        edge_predictions: predicted edge values [total_edges, 1] (PyTorch tensor)
-
     Returns:
         List of (A, P_pred, S) tuples for TwoGridLoss
     """
@@ -477,43 +473,6 @@ def save_results(args, metrics, stats, predictions, targets):
 
     return results_file
 
-
-def print_summary(metrics, stats, model_type='stage1'):
-    """Print evaluation summary"""
-    print("\n" + "="*60)
-    print(" "*20 + "EVALUATION SUMMARY")
-    print("="*60)
-
-    print("\nPerformance Metrics:")
-    print(f"  MSE:              {metrics['mse']:.6f}")
-    print(f"  MAE:              {metrics['mae']:.6f}")
-    print(f"  Relative Error:   {metrics['relative_error']:.4%}")
-    if model_type == 'stage2':
-        print(f"    (computed for |target| > 0.01 to avoid division issues)")
-
-    # Stage 2 specific metrics
-    if 'twogrid_frobenius' in metrics:
-        print(f"\nTwo-Grid Convergence:")
-        print(f"  Frobenius Norm:   {metrics['twogrid_frobenius']:.6f}")
-        print(f"  Mean:             {metrics['mean_twogrid']:.6f}")
-        print(f"  Std:              {metrics['std_twogrid']:.6f}")
-        print(f"  Range:            [{metrics['min_twogrid']:.6f}, {metrics['max_twogrid']:.6f}]")
-
-    print("\nStatistical Analysis:")
-    print(f"  R² Score:         {stats.get('r2_score', 0):.4f}")
-    if stats.get('correlation', 0) == 0.0 and stats.get('std_prediction', 1) < 1e-10:
-        print(f"  Correlation:      N/A (predictions are constant)")
-    elif stats.get('correlation', 0) == 0.0 and stats.get('std_target', 1) < 1e-10:
-        print(f"  Correlation:      N/A (targets are constant)")
-    else:
-        print(f"  Correlation:      {stats.get('correlation', 0):.4f}")
-    print(f"  Mean Error:       {stats['mean_error']:.6f}")
-    print(f"  Std Error:        {stats['std_error']:.6f}")
-    print(f"  Max Error:        {stats['max_error']:.6f}")
-
-    print("\n" + "="*60)
-
-
 def main():
     """Main evaluation function"""
     args = parse_args()
@@ -639,9 +598,6 @@ def main():
 
     # Compute statistics
     stats = compute_statistics(predictions, targets)
-
-    # Print summary
-    print_summary(metrics, stats, args.model_type)
 
     # Save results
     results_file = save_results(args, metrics, stats, predictions, targets)

@@ -12,10 +12,10 @@
  * Utility class for writing NumPy .npy format files
  *
  * Implements NumPy .npy format version 1.0 specification:
- * - Magic string: "\x93NUMPY"
- * - Version: 1.0
- * - Header: Python dict with dtype, shape, fortran_order
- * - Data: Binary array data in C order (row-major)
+ *   Magic string: "\x93NUMPY"
+ *   Version: 1.0
+ *   Header: Python dict with dtype, shape, fortran_order
+ *   Data: Binary array data in C order (row-major)
  */
 class NPYWriter
 {

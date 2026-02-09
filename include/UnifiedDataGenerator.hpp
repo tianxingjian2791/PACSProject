@@ -17,9 +17,8 @@ namespace UnifiedAMG
     using namespace dealii;
     using namespace AMGOperators;
 
-    /**
-     * Output format type
-     */
+    
+    // Output format type
     enum class OutputFormat
     {
         THETA_CNN,    // CNN format: pooled 50x50 matrices
@@ -28,9 +27,7 @@ namespace UnifiedAMG
         ALL           // Generate all formats
     };
 
-    /**
-     * Convert deal.II PETSc sparse matrix to CSR format
-     */
+    // Convert deal.II PETSc sparse matrix to CSR format    
     CSRMatrix convert_to_csr(const PETScWrappers::MPI::SparseMatrix& matrix)
     {
         CSRMatrix A;
@@ -51,7 +48,7 @@ namespace UnifiedAMG
             const PetscInt* col_indices;
             const PetscScalar* values;
 
-            // This is a simplified version - actual implementation needs proper PETSc calls
+            
             // For now, iterate through columns
             for (unsigned int j = 0; j < A.n_cols; ++j)
             {
@@ -71,10 +68,10 @@ namespace UnifiedAMG
     /**
      * Find optimal theta by searching over candidates
      *
-     * @param A System matrix
-     * @param theta_candidates Candidate theta values to test
-     * @param rho_out Output convergence factor
-     * @return Optimal theta value
+     * A - System matrix
+     * theta_candidates - Candidate theta values to test
+     * rho_out - Output convergence factor
+     * return - Optimal theta value
      */
     double find_optimal_theta(const CSRMatrix& A,
                               const std::vector<double>& theta_candidates,
@@ -102,9 +99,8 @@ namespace UnifiedAMG
                 for (int marker : cf_markers)
                     n_coarse += marker;
 
-                // Heuristic: estimate convergence factor
-                // In practice, would need to compute actual two-grid convergence
-                // For now, use coarsening ratio as proxy
+               
+                // Use coarsening ratio as proxy
                 double coarsening_ratio = static_cast<double>(n_coarse) / A.n_rows;
 
                 // Ideal coarsening ratio is around 0.25-0.5
@@ -131,10 +127,8 @@ namespace UnifiedAMG
         rho_out = best_rho;
         return best_theta;
     }
-
-    /**
-     * Write theta CNN format (pooled 50x50 matrix)
-     */
+    
+    // Write theta CNN format (pooled 50x50 matrix)
     void write_theta_cnn_format(std::ofstream& file,
                                 const CSRMatrix& A,
                                 double theta,
@@ -166,9 +160,8 @@ namespace UnifiedAMG
         file << "\n";
     }
 
-    /**
-     * Write theta GNN format (sparse graph)
-     */
+    
+    // Write theta GNN format (sparse graph)
     void write_theta_gnn_format(std::ofstream& file,
                                 const CSRMatrix& A,
                                 double theta,
@@ -195,9 +188,7 @@ namespace UnifiedAMG
         file << "\n";
     }
 
-    /**
-     * Write P-value format (graph with C/F splitting and baseline P)
-     */
+    // Write P-value format (graph with C/F splitting and baseline P)
     void write_p_value_format(std::ofstream& file,
                              const CSRMatrix& A,
                              double theta,
@@ -248,12 +239,12 @@ namespace UnifiedAMG
     /**
      * Generate unified dataset from a PETSc sparse matrix
      *
-     * @param matrix System matrix from deal.II
-     * @param h Mesh size
-     * @param output_format Which format(s) to generate
-     * @param theta_cnn_file Output file for CNN format (optional)
-     * @param theta_gnn_file Output file for GNN format (optional)
-     * @param p_value_file Output file for P-value format (optional)
+     * matrix - System matrix from deal.II
+     * h - Mesh size
+     * output_format - Which format(s) to generate
+     * theta_cnn_file - Output file for CNN format (optional)
+     * theta_gnn_file - Output file for GNN format (optional)
+     * p_value_file - Output file for P-value format (optional)
      */
     void generate_unified_sample(const PETScWrappers::MPI::SparseMatrix& matrix,
                                  double h,

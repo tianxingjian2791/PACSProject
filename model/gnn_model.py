@@ -29,8 +29,6 @@ class SimpleGNNConv(MessagePassing):
 
     def forward(self, x, edge_index, edge_attr):
         """
-        Forward propagation
-
         Parameters:
             x: node features [N, in_channels]
             edge_index: edge indices [2, E]
@@ -49,8 +47,6 @@ class SimpleGNNConv(MessagePassing):
 
     def message(self, x_i, x_j, edge_attr):
         """
-        Message computation for each edge
-
         Parameters:
             x_i: target node features [E, in_channels]
             x_j: source node features [E, in_channels]
@@ -65,22 +61,8 @@ class SimpleGNNConv(MessagePassing):
 
 
 class GNNModel(nn.Module):
-    """
-    Graph Neural Network for theta/rho prediction
-
-    Architecture:
-        Input: Graph with node features (degree), edge features (matrix values)
-        GNN Layer 1 → ELU → Dropout
-        GNN Layer 2 → ELU
-        Global Mean Pooling
-        Concat with [theta, log_h]
-        FC1 → ReLU → Dropout
-        FC2 → Output (rho)
-    """
     def __init__(self, hidden_channels=64, dropout=0.25):
         """
-        GNN model initialization
-
         Parameters:
             hidden_channels: the number of hidden channels
             dropout: dropout rate
@@ -109,8 +91,6 @@ class GNNModel(nn.Module):
 
     def forward(self, data):
         """
-        Forward propagation
-
         Parameter:
             data: PyTorch Geometric Data with:
                 - x: node features [N, 1] (degree)
@@ -153,18 +133,6 @@ class GNNModel(nn.Module):
 
 
 def train(model, loader, optimizer, device):
-    """
-    Train model
-
-    Parameters:
-        model: GNN
-        loader: data loader
-        optimizer: used to optimize the cost function
-        device: computing device
-
-    return:
-        mse
-    """
     # Make a progress bar
     progress_bar = tqdm(total=len(loader), desc="Training batches:")
 
@@ -198,17 +166,6 @@ def train(model, loader, optimizer, device):
 
 
 def test(model, loader, device):
-    """
-    Test for the neural network
-
-    Parameters:
-        model: GNN
-        loader: data loader
-        device: computing device
-
-    return:
-        mse
-    """
     model.eval()
     total_loss = 0
     total_samples = 0

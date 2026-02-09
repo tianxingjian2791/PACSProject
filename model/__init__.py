@@ -3,7 +3,6 @@ AMG Learning Models
 
 This package contains neural network models for accelerating Algebraic Multigrid (AMG) methods:
     - CNNModel: CNN for theta/rho prediction (existing)
-    - GATModel: Graph Attention Network for theta/rho prediction (existing)
     - GNNModel: Simple Graph Neural Network for theta/rho prediction (new)
     - EncodeProcessDecode: Graph network for P-value prediction (new)
     - UnifiedAMGModel: Two-stage model combining theta and P-value prediction (new)
@@ -23,14 +22,10 @@ from .graph_net_model import (
 __all__ = [
     # Stage 1 models (theta prediction)
     'CNNModel',
-    'GATModel',
     'GNNModel',
 
     # Stage 2 model (P-value prediction)
     'EncodeProcessDecode',
-
-    # Unified model
-    'UnifiedAMGModel',
 
     # Training/testing functions
     'cnn_train',

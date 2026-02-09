@@ -556,10 +556,7 @@ namespace AMGElastic
   }
 
 
-  // ============================================================================
   // Getter Method Implementations
-  // ============================================================================
-
   template <int dim>
   AMGOperators::CSRMatrix ElasticProblem<dim>::get_system_matrix_csr()
   {
@@ -578,10 +575,7 @@ namespace AMGElastic
     return convergence_factor;
   }
 
-  // ============================================================================
   // PETSc to CSR Conversion
-  // ============================================================================
-
   template <int dim>
   AMGOperators::CSRMatrix ElasticProblem<dim>::petsc_to_csr(const PETScWrappers::MPI::SparseMatrix &matrix)
   {
@@ -633,10 +627,8 @@ namespace AMGElastic
     return A;
   }
 
-  // ============================================================================
-  // Material Properties Helper Class
-  // ============================================================================
 
+  // Material Properties Helper Class
   class MaterialProperties
   {
     public:
@@ -659,11 +651,7 @@ namespace AMGElastic
       double lambda;
   };
 
-
-  // ============================================================================
   // DEPRECATED: Legacy dataset generation (use generate_amg_data instead)
-  // ============================================================================
-
   void generate_dataset(std::ofstream &file, std::string train_flag)
   {
     std::cerr << "ERROR: generate_dataset() is deprecated." << std::endl;

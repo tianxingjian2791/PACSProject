@@ -40,10 +40,7 @@
 #include <sys/stat.h>
 #include <omp.h>
 
-// ============================================================================
 // Configuration Enums and Structures
-// ============================================================================
-
 enum class ProblemType {
     DIFFUSION,
     ELASTIC,
@@ -83,10 +80,8 @@ struct CommandLineArgs {
     bool use_npy = false;  // Use CSV as default, can switch to NPZ for better performance
 };
 
-// ============================================================================
-// Scale Configuration Structures
-// ============================================================================
 
+// Scale Configuration Structures
 struct FEMScaleConfig {
     std::vector<double> param1_values;  // epsilon for D, E for Elastic, viscosity for S
     std::vector<double> param2_values;  // (optional) nu for E, velocity_degree for S
@@ -107,10 +102,7 @@ struct GraphScaleConfig {
     int num_points;  // Nodes per graph
 };
 
-// ============================================================================
 // Utility Functions
-// ============================================================================
-
 std::vector<double> linspace(double start, double end, size_t num_points) {
     std::vector<double> result;
     if (num_points == 0) return result;
@@ -152,10 +144,7 @@ std::string scale_to_string(DatasetScale scale) {
     }
 }
 
-// ============================================================================
 // Configuration Factory
-// ============================================================================
-
 class ConfigFactory {
 public:
     static FEMScaleConfig get_diffusion_config(DatasetScale scale, DatasetSplit split) {
@@ -307,10 +296,7 @@ public:
     }
 };
 
-// ============================================================================
 // Unified AMG Data Generator
-// ============================================================================
-
 class UnifiedAMGDataGenerator {
 public:
     explicit UnifiedAMGDataGenerator(const CommandLineArgs& args)
@@ -571,10 +557,7 @@ void UnifiedAMGDataGenerator::write_sample(
     }
 }
 
-// ============================================================================
-// NPZ Writing Functions (High Performance Binary Format)
-// ============================================================================
-
+// NPZ Writing Functions (Binary Format)
 void UnifiedAMGDataGenerator::write_sample_npz_theta_gnn(
     const AMGOperators::CSRMatrix& A,
     double h, double theta, double rho,
@@ -802,11 +785,10 @@ void UnifiedAMGDataGenerator::generate_diffusion() {
 
     std::cout << "\n========================================" << std::endl;
     std::cout << "Generating Diffusion dataset" << std::endl;
-    std::cout << "========================================" << std::endl;
     std::cout << "Scale: " << scale_to_string(args_.scale) << std::endl;
     std::cout << "Total samples: " << total << std::endl;
     std::cout << "Format: " << (args_.use_npy ? "NPZ (binary)" : "CSV (text)") << std::endl;
-    std::cout << "========================================\n" << std::endl;
+    std::cout << "\n" << std::endl;
 
     // Setup output (CSV or NPZ)
     std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
@@ -898,11 +880,10 @@ void UnifiedAMGDataGenerator::generate_elastic() {
 
     std::cout << "\n========================================" << std::endl;
     std::cout << "Generating Elastic dataset" << std::endl;
-    std::cout << "========================================" << std::endl;
     std::cout << "Scale: " << scale_to_string(args_.scale) << std::endl;
     std::cout << "Total samples: " << total << std::endl;
     std::cout << "Format: " << (args_.use_npy ? "NPZ (binary)" : "CSV (text)") << std::endl;
-    std::cout << "========================================\n" << std::endl;
+    std::cout << "\n" << std::endl;
 
     // Setup output (CSV or NPZ)
     std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
@@ -999,11 +980,10 @@ void UnifiedAMGDataGenerator::generate_stokes() {
 
     std::cout << "\n========================================" << std::endl;
     std::cout << "Generating Stokes dataset" << std::endl;
-    std::cout << "========================================" << std::endl;
     std::cout << "Scale: " << scale_to_string(args_.scale) << std::endl;
     std::cout << "Total samples: " << total << std::endl;
     std::cout << "Format: " << (args_.use_npy ? "NPZ (binary)" : "CSV (text)") << std::endl;
-    std::cout << "========================================\n" << std::endl;
+    std::cout << "\n" << std::endl;
 
     // Setup output (CSV or NPZ)
     std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
@@ -1100,12 +1080,11 @@ void UnifiedAMGDataGenerator::generate_graph_laplacian() {
 
     std::cout << "\n========================================" << std::endl;
     std::cout << "Generating Graph Laplacian dataset" << std::endl;
-    std::cout << "========================================" << std::endl;
     std::cout << "Scale: " << scale_to_string(args_.scale) << std::endl;
     std::cout << "Total samples: " << config.num_samples << std::endl;
     std::cout << "Nodes per graph: " << config.num_points << std::endl;
     std::cout << "Format: " << (args_.use_npy ? "NPZ (binary)" : "CSV (text)") << std::endl;
-    std::cout << "========================================\n" << std::endl;
+    std::cout << "\n" << std::endl;
 
     // Setup output (CSV or NPZ)
     std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
@@ -1206,12 +1185,11 @@ void UnifiedAMGDataGenerator::generate_spectral_clustering() {
 
     std::cout << "\n========================================" << std::endl;
     std::cout << "Generating Spectral Clustering dataset" << std::endl;
-    std::cout << "========================================" << std::endl;
     std::cout << "Scale: " << scale_to_string(args_.scale) << std::endl;
     std::cout << "Total samples: " << config.num_samples << std::endl;
     std::cout << "Nodes per graph: " << config.num_points << std::endl;
     std::cout << "Format: " << (args_.use_npy ? "NPZ (binary)" : "CSV (text)") << std::endl;
-    std::cout << "========================================\n" << std::endl;
+    std::cout << "\n" << std::endl;
 
     // Setup output (CSV or NPZ)
     std::ofstream theta_cnn_file, theta_gnn_file, p_value_file;
@@ -1320,7 +1298,7 @@ void print_help() {
 
     std::cout << "Optional Arguments:\n";
     std::cout << "  -o, --output-dir DIR      Output directory (default: ./datasets/unified)\n";
-    std::cout << "  -t, --threads NUM         OpenMP threads (default: auto)\n";
+    std::cout << "  -t NUM         OpenMP threads (default: auto)\n";
     std::cout << "  --seed SEED               Random seed (default: 42)\n";
     std::cout << "  -v, --verbose             Verbose progress output\n";
     std::cout << "  --use-npy                 Use NPZ (binary) format instead of CSV (text)\n";
@@ -1338,7 +1316,7 @@ void print_help() {
     std::cout << "  ./generate_amg_data -p D -s train -f theta-cnn -c small\n\n";
 
     std::cout << "  # Generate xlarge graph Laplacian test set in all formats\n";
-    std::cout << "  ./generate_amg_data -p GL -s test -f all -c xlarge --threads 16\n\n";
+    std::cout << "  ./generate_amg_data -p GL -s test -f all -c xlarge -t 16\n\n";
 
     std::cout << "  # Generate medium elastic training with custom output\n";
     std::cout << "  ./generate_amg_data -p E -s train -f p-value -c medium -o custom_data\n\n";
@@ -1426,7 +1404,7 @@ bool parse_arguments(int argc, char* argv[], CommandLineArgs& args) {
             }
             args.output_dir = argv[i];
         }
-        else if (arg == "-t" || arg == "--threads") {
+        else if (arg == "-t") {
             if (++i >= argc) {
                 std::cerr << "Error: Missing value for " << arg << std::endl;
                 return false;
@@ -1465,7 +1443,6 @@ void print_configuration(const CommandLineArgs& args) {
     std::cout << "\n";
     std::cout << "========================================\n";
     std::cout << "Configuration\n";
-    std::cout << "========================================\n";
     std::cout << "Problem type: " << problem_type_to_string(args.problem) << "\n";
     std::cout << "Dataset split: " << (args.split == DatasetSplit::TRAIN ? "train" : "test") << "\n";
     std::cout << "Output format: ";
@@ -1485,7 +1462,7 @@ void print_configuration(const CommandLineArgs& args) {
         std::cout << "OpenMP threads: auto\n";
     }
     std::cout << "Verbose: " << (args.verbose ? "yes" : "no") << "\n";
-    std::cout << "========================================\n";
+    std::cout << "\n";
 }
 
 

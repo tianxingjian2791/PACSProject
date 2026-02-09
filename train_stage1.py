@@ -110,11 +110,11 @@ def create_model(args, device):
 def create_dataloaders(args):
     """Create train and test dataloaders"""
     print("\nLoading data...")
-    print(f"Format: {'NPY/NPZ (high-performance)' if args.use_npy else 'CSV'}")
+    print(f"Format: {'NPY/NPZ' if args.use_npy else 'CSV'}")
 
     if args.model == 'CNN':
         if args.use_npy:
-            # CNN with NPY format (high-performance)
+            # CNN with NPY format
             from data_loader_npy import create_theta_cnn_data_loaders_npy
 
             # Extract problem type from filename (e.g., 'train_D.csv' -> 'train_D')
@@ -217,11 +217,10 @@ def main():
 
     print("="*60)
     print("Stage 1 Training: Theta Prediction")
-    print("="*60)
     print(f"Model: {args.model}")
     print(f"Dataset: {args.dataset}")
     print(f"Experiment: {args.experiment_name}")
-    print("="*60)
+    print("\n\n")
 
     # Get device
     device = get_device()
@@ -315,11 +314,9 @@ def main():
 
     print("\n" + "="*60)
     print("Training Complete!")
-    print("="*60)
     print(f"Best test loss: {best_test_loss:.6f}")
     print(f"Best model saved to: {checkpointer.checkpoint_dir / 'best_model.pt'}")
     print(f"Logs saved to: {logger.log_file}")
-    print("="*60)
 
 
 if __name__ == '__main__':
