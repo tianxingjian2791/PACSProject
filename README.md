@@ -220,6 +220,16 @@ build/generate_amg_data -p S -s train -f all -c large --threads 8
 build/generate_amg_data -p SC -s test -f all -c medium --seed 12345
 ```
 
+### Speed Comparison
+#### CSV Format
+Here we test the data generation spead of the graph Laplacian problem by measure the number of samples generated per second (samples/s).
+|  | auto | 1 | 2 | 4 | 8 |
+|-------|---------|---------|---------|---------|---------|
+| **small** | 368.72 （156.48） | 445.05 (235.56) | $\textbf{586.66}$ (260.87) | 534.21 (252.69) | 349.75 (169.46) |
+| **medium** | 384.18 | 216.74 | 368.61 | $\textbf{491.14}$ | 382.81 |
+| **large** | 470.28 | 472.54 | 671.95 | $\textbf{696.03}$ | 422.89 (156.24) |
+| **xlarge** | 106.24 | 25.54 | 50.11 | 88.80 | $\textbf{113.30}$ (63.68) |
+
 ### Output Structure
 
 ```

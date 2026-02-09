@@ -15,7 +15,7 @@ find_package(deal.II 9.5.0
 # ============================================================================
 # Find Eigen3
 # ============================================================================
-set(EIGEN3_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/unified-amg-learning/cpp/external/eigen3")
+set(EIGEN3_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/eigen3")
 if(NOT EXISTS ${EIGEN3_INCLUDE_DIR}/Eigen)
   message(FATAL_ERROR "Eigen3 not found at ${EIGEN3_INCLUDE_DIR}")
 endif()
