@@ -504,38 +504,35 @@ def main():
         print(f"Test Loss:  {test_loss:.6f} | MSE: {test_mse:.6f} | TwoGrid: {test_twogrid:.6f}")
 
         # Log metrics
-        logger.log_epoch(epoch, train_mse+0.01*train_twogrid, test_mse+0.01*test_twogrid)
+        logger.log_epoch(epoch, train_twogrid, test_twogrid)
 
         # Learning rate scheduling
-        scheduler.step(test_mse+0.01*test_twogrid)  # Use combined metric for scheduling
+        scheduler.step(test_twogrid)  # Use combined metric for scheduling
 
         # Save checkpoint
-        is_best = (test_mse + 0.01 * test_twogrid) < best_test_loss
+        is_best = test_twogrid < best_test_loss
         if is_best:
-            best_test_loss = test_mse + 0.01 * test_twogrid
+            best_test_loss = test_twogrid
             print(f"New best model! Test loss: {best_test_loss:.6f}")
 
         checkpointer.save(
             model=model,
             optimizer=optimizer,
             epoch=epoch,
-            loss=test_mse + 0.01 * test_twogrid,
+            loss=test_twogrid,
             is_best=is_best,
             metadata={'train_loss': train_loss, 'test_loss': test_loss, 'test_mse': test_mse, 'test_twogrid': test_twogrid}
         )
 
         # Early stopping
-        if early_stopping(test_mse + 0.01 * test_twogrid):
+        if early_stopping(test_twogrid):
             print(f"\nEarly stopping triggered after {epoch} epochs")
             break
 
     print("\n" + "="*60)
     print("Training Complete!")
-    print("="*60)
     print(f"Best test loss: {best_test_loss:.6f}")
     print(f"Best model saved to: {checkpointer.checkpoint_dir / 'best_model.pt'}")
-    print("="*60)
-
 
 if __name__ == '__main__':
     main()

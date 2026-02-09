@@ -189,7 +189,7 @@ Optional Arguments:
 |-------|-----------|-----------|-----------|----------|
 | **small** | 50 | 60 | 60 | Quick testing |
 | **medium** | 450 | 540 | 1,080 | Validation |
-| **large** | 1,200 | 2,500 | 3,000 | Full training |
+| **large** | 1,800 | 1,500 | 1,800 | Full training |
 | **xlarge** | 2,560 | 4,480 | 7,680 | Production |
 
 #### Graph Problems (Graph Laplacian, Spectral Clustering)
@@ -198,26 +198,26 @@ Optional Arguments:
 |-------|---------|-------------|----------|
 | **small** | 50 | 64 | Quick testing |
 | **medium** | 500 | 128 | Validation |
-| **large** | 2,000 | 256 | Full training |
+| **large** | 5,000 | 64 | Full training |
 | **xlarge** | 10,000 | 512 | Production |
 
 ### Examples
 
 ```bash
 # Generate small diffusion training set
-build/generate_amg_data -p D -s train -f all -c small --csv
+build/generate_amg_data -p D -s train -f all -c small
 
 # Generate xlarge graph Laplacian test set
-build/generate_amg_data -p GL -s test -f theta-gnn -c xlarge --threads 8 --csv
+build/generate_amg_data -p GL -s test -f theta-gnn -c xlarge --threads 8
 
 # Generate medium elastic training with verbose output
-build/generate_amg_data -p E -s train -f p-value -c medium -v --csv
+build/generate_amg_data -p E -s train -f p-value -c medium -v
 
 # Generate all formats for Stokes, large scale
-build/generate_amg_data -p S -s train -f all -c large --threads 8 --csv
+build/generate_amg_data -p S -s train -f all -c large --threads 8
 
 # Spectral clustering with custom seed
-build/generate_amg_data -p SC -s test -f all -c medium --seed 12345 --csv
+build/generate_amg_data -p SC -s test -f all -c medium --seed 12345
 ```
 
 ### Output Structure
@@ -256,18 +256,18 @@ We've implemented **high-performance NPY/NPZ binary format** for both data gener
 
 ```bash
 # Generate NPZ data (default, 5× faster)
-./build/generate_amg_data -p GL -s train -f theta-gnn -c small -t 8
-./build/generate_amg_data -p GL -s test -f theta-gnn -c small -t 8 
+./build/generate_amg_data -p GL -s train -f theta-gnn -c small -t 8 --use-npy
+./build/generate_amg_data -p GL -s test -f theta-gnn -c small -t 8 --use-npy
 
 # Generate P-value data for Stage 2
-./build/generate_amg_data -p GL -s train -f p-value -c medium -t 8
-./build/generate_amg_data -p GL -s test -f p-value -c medium -t 8
+./build/generate_amg_data -p GL -s train -f p-value -c medium -t 8 --use-npy
+./build/generate_amg_data -p GL -s test -f p-value -c medium -t 8 --use-npy
 
 # Generate all formats
-./build/generate_amg_data -p D -s train -f all -c large -t 8
+./build/generate_amg_data -p D -s train -f all -c large -t 8 --use-npy
 
-# CSV format (legacy, if needed)
-./build/generate_amg_data -p GL -s train -f theta-gnn -c small --csv
+# CSV format (no --use-npy)
+./build/generate_amg_data -p GL -s train -f theta-gnn -c small
 ```
 
 ### Training with NPY Format

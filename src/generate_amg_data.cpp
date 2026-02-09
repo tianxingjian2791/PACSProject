@@ -80,7 +80,7 @@ struct CommandLineArgs {
     int num_threads = 0;  // 0 = auto (OpenMP default)
     int seed = 42;
     bool verbose = false;
-    bool use_npy = true;  // Use NPY/NPZ format instead of CSV (default: true for performance)
+    bool use_npy = false;  // Use CSV as default, can switch to NPZ for better performance
 };
 
 // ============================================================================
@@ -180,7 +180,7 @@ public:
                 config.param1_values = linspace(0.0, 9.5, 18);     // epsilon: 18 values
                 config.theta_values = linspace(0.02, 0.9, 50);     // theta: 50 values
                 config.refinements = {3, 4};                  // 2 levels
-                // Total: 18 × 50 × 2 = 1,800 samples
+                // Total: 18 × 50 × 2 = 1,800 samples (1200 for training, 600 for testing)
                 break;
 
             case DatasetScale::XLARGE:
@@ -219,7 +219,7 @@ public:
                 config.param2_values = {0.20, 0.25, 0.30, 0.35, 0.40};    // 5 values
                 config.theta_values = linspace(0.02, 0.9, 50);      // 50 values
                 config.refinements = {3, 4};                   // 2 levels
-                // Total: 3 × 5 × 50 × 2 = 1,500 samples
+                // Total: 3 × 5 × 50 × 2 = 1,500 samples (1000 for training, 500 for testing)
                 break;
 
             case DatasetScale::XLARGE:
@@ -259,7 +259,7 @@ public:
                 config.param2_values = {2};                       // velocity_degree: 1 values
                 config.theta_values = linspace(0.02, 0.9, 50);       // theta: 50 values
                 config.refinements = {3, 4};                    // 2 levels
-                // Total: 18 × 1 × 50 × 2 = 1,800 samples
+                // Total: 18 × 1 × 50 × 2 = 1,800 samples (1200 for training, 600 for testing)
                 break;
 
             case DatasetScale::XLARGE:
@@ -617,7 +617,7 @@ void UnifiedAMGDataGenerator::write_sample_npz_theta_gnn(
         static_cast<double>(A.n_rows),
         rho,
         h,
-        0.0  // epsilon (placeholder, not used for graph problems)
+        0.0  // epsilon (not used for graph problems)
     };
 
     std::vector<double> theta_arr = {theta};
@@ -781,15 +781,12 @@ void UnifiedAMGDataGenerator::print_final_summary(
     std::ios_base::fmtflags old_flags = std::cout.flags();
     std::streamsize old_precision = std::cout.precision();
 
-    std::cout << "\n========================================" << std::endl;
     std::cout << "Generation complete!" << std::endl;
-    std::cout << "========================================" << std::endl;
     std::cout << "Total samples: " << total << std::endl;
     std::cout << "Total time: " << std::fixed << std::setprecision(2)
               << elapsed << "s" << std::endl;
     std::cout << "Average rate: " << std::setprecision(2)
               << (total / elapsed) << " samples/s" << std::endl;
-    std::cout << "========================================\n" << std::endl;
 
     // Restore original cout format state
     std::cout.flags(old_flags);
@@ -1306,15 +1303,11 @@ void UnifiedAMGDataGenerator::generate_spectral_clustering() {
     print_final_summary(config.num_samples, start_time);
 }
 
-// ============================================================================
 // Command-Line Argument Parsing
-// ============================================================================
-
 void print_help() {
     std::cout << "\n";
     std::cout << "========================================\n";
     std::cout << "Unified AMG Data Generator\n";
-    std::cout << "========================================\n\n";
 
     std::cout << "Usage:\n";
     std::cout << "  ./generate_amg_data [OPTIONS]\n\n";
@@ -1330,6 +1323,7 @@ void print_help() {
     std::cout << "  -t, --threads NUM         OpenMP threads (default: auto)\n";
     std::cout << "  --seed SEED               Random seed (default: 42)\n";
     std::cout << "  -v, --verbose             Verbose progress output\n";
+    std::cout << "  --use-npy                 Use NPZ (binary) format instead of CSV (text)\n";
     std::cout << "  -h, --help                Show this help message\n\n";
 
     std::cout << "Problem Types:\n";
@@ -1449,6 +1443,9 @@ bool parse_arguments(int argc, char* argv[], CommandLineArgs& args) {
         else if (arg == "-v" || arg == "--verbose") {
             args.verbose = true;
         }
+        else if (arg == "--use-npy") {
+            args.use_npy = true;
+        }
         else {
             std::cerr << "Error: Unknown argument: " << arg << std::endl;
             return false;
@@ -1491,9 +1488,6 @@ void print_configuration(const CommandLineArgs& args) {
     std::cout << "========================================\n";
 }
 
-// ============================================================================
-// Main Function
-// ============================================================================
 
 int main(int argc, char* argv[]) {
     // Initialize MPI (needed for FEM solvers)
