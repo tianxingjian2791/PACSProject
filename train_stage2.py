@@ -280,12 +280,19 @@ def train_epoch(epoch, model, loader, optimizer, criterion_mse, criterion_twogri
         # Compute two-grid convergence loss (returns differentiable tensor!)
         twogrid_loss = criterion_twogrid(A_list, P_list, S_list)
 
+        '''
         # Use Mixed loss for backpropagation (it's now differentiable!)
         if epoch <= 10:
             # Warm-up with MSE loss for first 10 epochs
             loss = mse_loss
         else:
             loss = 0.01 * twogrid_loss + mse_loss  # Combine with MSE loss
+        '''
+
+        if use_twogrid:
+            loss = twogrid_loss
+        else:
+            loss = mse_loss          
 
         # Backward pass
         loss.backward()
@@ -351,11 +358,18 @@ def test_epoch(epoch, model, loader, criterion_mse, criterion_twogrid, device, u
 
             twogrid_loss = criterion_twogrid(A_list, P_list, S_list)
 
+            '''
             if epoch <= 10:
                 # During warm-up, report MSE loss only 
                 loss = mse_loss
             else:            
                 loss = mse_loss + 0.01 * twogrid_loss
+            '''
+
+            if use_twogrid:
+                loss = twogrid_loss
+            else:
+                loss = mse_loss   
 
             total_loss += loss.item()
             total_mse_loss += mse_loss.item()

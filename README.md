@@ -2,14 +2,14 @@
 
 **PACS Course Project** - Learning optimal AMG parameters using Graph Neural Networks
 
-This project implements a unified deep learning framework for accelerating Algebraic Multigrid (AMG) solvers by predicting optimal coarsening parameters and interpolation operators (or prolongation matrices).
+This project implements a two-stage deep learning framework for accelerating Algebraic Multigrid (AMG) solvers by predicting optimal coarsening parameters and interpolation operators (or prolongation matrices).
 
 ---
 
 ## Project Overview
 
 Algebraic Multigrid (AMG) methods are powerful iterative solvers for large sparse linear systems. However, their performance heavily depends on algorithmic parameters:
-- **Theta (θ)**: Strength threshold for coarse/fine splitting
+- **Theta ($theta$)**: Strength threshold for coarse/fine splitting
 - **Interpolation operators (P)**: Prolongation matrices for grid transfer
 
 This project uses **Convolutional Neural Networks (CNNs)** and **Graph Neural Networks (GNNs)** to learn optimal AMG parameters from problem characteristics, achieving:
@@ -23,7 +23,7 @@ This project uses **Convolutional Neural Networks (CNNs)** and **Graph Neural Ne
 
 ### Stage 1: Theta Prediction (C/F Splitting)
 - **Input**: Sparse matrix graph (edge features, node degrees)
-- **Output**: Optimal theta value for Ruge-Stüben C/F splitting
+- **Output**: Convergence factor ($rho$) for Ruge-Stüben C/F splitting. We can decide the optimal $theta$ from grid search by the predicted convergence factors
 - **Model**: CNN and GNN
 - **Training**: The samples with varied parameters
 
@@ -47,8 +47,7 @@ PACSProject/
 │   ├── DiffusionModel.hpp            # Diffusion problem
 │   ├── ElasticModel.hpp              # Elasticity problem
 │   ├── StokesModel.hpp               # Stokes flow problem
-│   ├── GraphLaplacianModel.hpp       # Graph Laplacian problem
-│   ├── GraphLaplacianModelEigen.hpp  # Eigen implementation
+│   ├── GraphLaplacianModelEigen.hpp  # Graph Laplacian problem
 │   ├── AMGOperators.hpp              # AMG algorithms (C/F, P, S)
 │   ├── Pooling.hpp                   # CNN pooling operators
 │   ├── NPYWriter.hpp                 # NumPy binary format writer
@@ -63,8 +62,7 @@ PACSProject/
 ├── model/                         # Python neural network models
 │   ├── cnn_model.py              # CNN for pooled matrix images
 │   ├── gnn_model.py              # GNN for graph representations
-│   ├── p_value_model.py          # MPNN for P-value prediction
-│   └── unified_model.py          # Two-stage unified model
+│   └── p_value_model.py          # MPNN for P-value prediction
 │
 ├── data/                          # Python data loaders
 │   ├── cnn_data_processing.py    # CNN dataset loader
@@ -75,7 +73,6 @@ PACSProject/
 │
 ├── train_stage1.py                # Train theta prediction (Stage 1)
 ├── train_stage2.py                # Train P-value prediction (Stage 2)
-├── train_unified.py               # Train full pipeline
 ├── evaluate.py                    # Model evaluation and metrics
 │
 ├── datasets/                      # Generated datasets
@@ -287,18 +284,6 @@ python train_stage1.py \
     --batch-size 64
 ```
 
-**Full Two-Stage Pipeline:**
-```bash
-python train_unified.py \
-    --dataset datasets/unified \
-    --train-file train_GL \
-    --test-file test_GL \
-    --stage1-model GNN \
-    --use-npy \
-    --epochs-stage1 50 \
-    --epochs-stage2 100
-```
-
 **Important:** When using `--use-npy`, specify problem types without `.csv` extension (e.g., `train_GL`, not `train_GL.csv`).
 
 ### NPZ File Structure
@@ -368,81 +353,96 @@ datasets/unified/
 ```bash
 source venv/bin/activate
 
+# theta prediction training based on GNN (If you want to try different datasets, just change the arguments)
 python train_stage1.py \
-    --model GNN \
-    --dataset datasets/unified \
-    --epochs 100 \
-    --batch-size 64 \
-    --hidden-channels 128 \
-    --lr 0.001 \
-    --save-dir weights/xlarge/stage1 \
-    --experiment-name gnn_xlarge_10k
-```
+--model GNN \
+--dataset datasets/unified \
+--train-file train_D \
+--test-file test_D \
+--use-npy \
+--epochs 50 \
+--batch-size 32 \
+--lr 0.001 \
+--hidden-channels 64 \
+--dropout 0.25 \
+--patience 10 \
+--save-dir weights/D_stage1_gnn \
+--log-dir logs/D_stage1_gnn \
+--experiment-name D_stage1_gnn \
+| tee logs/D_stage1_gnn_training.log
 
-**Expected results** (10,240 samples):
-- Train MSE: ~0.001-0.005
-- Test MSE: ~0.002-0.008
-- Training time: 1-2 hours (100 epochs)
+# theta prediction training based on CNN
+python train_stage1.py \
+--model CNN \
+--dataset datasets/unified \
+--train-file train_D.csv \
+--test-file test_D.csv \
+--epochs 50 \
+--batch-size 64 \
+--lr 0.001 \
+--hidden-channels 64 \
+--dropout 0.25 \
+--patience 10 \
+--save-dir weights/D_stage1_cnn \
+--log-dir logs/D_stage1_cnn \
+--experiment-name D_stage1_cnn \
+| tee logs/D_stage1_cnn_training.log
+```
 
 ### Stage 2: P-Value Prediction
 
 ```bash
+source venv/bin/activate
+
+# If you want to try different datasets, just change the arguments
 python train_stage2.py \
-    --dataset datasets/unified \
-    --epochs 150 \
-    --batch-size 32 \
-    --latent-size 128 \
-    --num-message-passing 4 \
-    --lr 0.003 \
-    --save-dir weights/xlarge/stage2 \
-    --experiment-name pvalue_xlarge_10k
+--dataset datasets/unified \
+--train-file train_D \
+--test-file test_D \
+--use-npy \
+--epochs 50 \
+--batch-size 16 \
+--lr 0.003 \
+--latent-size 64 \
+--num-layers 4 \
+--num-message-passing 3 \
+--patience 15 \
+--save-dir weights/D_stage2_pvalue \
+--log-dir logs/D_stage2_pvalue \
+--experiment-name D_stage2_pvalue \
+| tee logs/D_stage2_pvalue_training.log
 ```
-
-**Expected results**:
-- Convergence after ~100-150 epochs
-- Training time: 2-3 hours
-
-### Unified Pipeline (End-to-End)
-
-```bash
-python train_unified.py \
-    --dataset=datasets/unified \
-    --stage1-model=GNN \
-    --epochs-stage1=100 \
-    --epochs-stage2=150 \
-    --batch-size-stage1=64 \
-    --batch-size-stage2=32 \
-    --hidden-channels=128 \
-    --latent-size=128 \
-    --save-dir=weights/xlarge/unified \
-    --experiment-name=amg_xlarge_10k
-```
-
-**Total training time**: 3-5 hours
-
 ---
 
 ## Evaluation
 
 ```bash
 # Evaluate Stage 1 model
-python evaluate.py \
-    --model-type stage1 \
-    --model-path weights/xlarge/stage1/best_model.pt \
-    --dataset datasets/unified \
-    --hidden-channels 128
+python evaluate.py --model weights/D_stage1_cnn/D_stage1_cnn/best_model.pt \
+--model-type stage1_cnn \
+--dataset datasets/unified \
+--test-file test_D 
+--use-npy
+
+python evaluate.py --model weights/D_stage1_gnn/D_stage1_gnn/best_model.pt \
+--model-type stage1_gnn \
+--dataset datasets/unified \
+--test-file test_D 
+--use-npy
+
 
 # Evaluate Stage 2 model
-python evaluate.py \
-    --model-type stage2 \
-    --model-path weights/xlarge/stage2/best_model.pt \
-    --dataset datasets/unified
+ python evaluate.py --model weights/D_stage2_pvalue/D_stage2_pvalue/best_model.pt \
+ --model-type stage2 \
+ --dataset datasets/unified \
+ --test-file test_D \
+ --use-npy
 
-# Evaluate unified model
-python evaluate.py \
-    --model-type unified \
-    --model-path weights/xlarge/unified/unified_model_final.pt \
-    --dataset datasets/unified
+ python evaluate.py --model weights/GL_stage2_pvalue/GL_stage2_pvalue/best_model.pt \
+ --model-type stage2 \
+ --dataset datasets/unified \
+ --test-file test_GL \
+ --use-npy
 ```
 ---
 

@@ -19,7 +19,6 @@ from .graph_net_model import (
     GlobalModel,
     GraphNetwork
 )
-from .unified_model import UnifiedAMGModel, create_unified_model
 
 __all__ = [
     # Stage 1 models (theta prediction)
@@ -32,7 +31,6 @@ __all__ = [
 
     # Unified model
     'UnifiedAMGModel',
-    'create_unified_model',
 
     # Training/testing functions
     'cnn_train',
