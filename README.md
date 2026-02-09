@@ -171,7 +171,7 @@ Optional Arguments:
   --seed SEED               Random seed (default: 42)
   -v, --verbose             Verbose progress output
   -h, --help                Show help message
-  --csv                     Store data in CSV format (default: NPZ format)
+  --use-npy                 Store data in NPZ format (default: CSV format)
 ```
 
 ### Output Formats
@@ -221,14 +221,14 @@ build/generate_amg_data -p SC -s test -f all -c medium --seed 12345
 ```
 
 ### Speed Comparison
-#### CSV Format
-Here we test the data generation spead of the graph Laplacian problem by measure the number of samples generated per second (samples/s).
+#### CSV(NPZ) Format
+Here we test the data generation spead of the graph Laplacian problem by measure the number of samples generated per second (samples/s). The numbers in the parentheses are for NPY format.
 |  | auto | 1 | 2 | 4 | 8 |
 |-------|------|------|------|------|------|
 | **small** | 368.72(156.48) | 445.05(235.56) | $\textbf{586.66}$($\textbf{260.87}$) | 534.21(252.69) | 349.75(169.46) |
 | **medium** | 384.18(138.25) | 216.74(144.36) | 368.61($\textbf{203.20}$) | $\textbf{491.14}$(200.42) | 382.81(135.77) |
 | **large** | 470.28(180.05) | 472.54(246.68) | 671.95($\textbf{281.16}$) | $\textbf{696.03}$(281.03) | 422.89(156.24) |
-| **xlarge** | 106.24(78.94) | 25.54 | 50.11 | 88.80 | $\textbf{113.30}$(63.68) |
+| **xlarge** | 106.24(78.94) | 25.54(24.32) | 50.11(44.65) | 88.80($\textbf{73.55}$) | $\textbf{113.30}$(63.68) |
 
 ### Output Structure
 
@@ -255,9 +255,8 @@ datasets/unified/
 
 ### Overview
 
-We've implemented **high-performance NPY/NPZ binary format** for both data generation and training, achieving significant performance improvements:
+We've implemented **high-performance NPY/NPZ binary format** for training, achieving significant performance improvements:
 
-- ✅ **Faster data generation**: For Graph Laplacian problem, 334 samples/s (NPZ) vs 64 samples/s (CSV)
 - ✅ **Faster data loading**: Binary I/O eliminates CSV parsing overhead
 - ✅ **Smaller file sizes**: Binary compression reduces storage
 - ✅ **Complete pipeline support**: All problem types (D, E, S, GL, SC) and all stages
@@ -346,10 +345,10 @@ datasets/unified/
 **Backward Compatibility:**
 - CSV loaders still work (omit `--use-npy` flag)
 - Can mix CSV and NPY in different experiments
-- NPY recommended for all new work
+- NPY recommended for all training work
 
 **Converting Workflow:**
-1. Regenerate datasets with NPZ format (default)
+1. Regenerate datasets with NPZ format
 2. Add `--use-npy` flag to training scripts
 3. Update file paths to use problem types without `.csv`
 
